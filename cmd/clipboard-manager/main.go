@@ -5,6 +5,7 @@ import (
 	"clipboard-manager/internal/service"
 	"clipboard-manager/internal/storage"
 	"clipboard-manager/internal/storage/sqlite"
+	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -13,7 +14,16 @@ import (
 )
 
 func main() {
-	// Set up storage paths in user's home directory
+	// Configuration flags
+	var (
+		dbPath  = flag.String("db", "", "Database path (default: ~/.clipboard-manager/clipboard.db)")
+		fsPath  = flag.String("fs", "", "File storage path (default: ~/.clipboard-manager/files)")
+		verbose = flag.Bool("verbose", false, "Enable verbose logging")
+	)
+
+	flag.Parse()
+
+	// Set up storage paths
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("Failed to get home directory: %v", err)
@@ -24,10 +34,18 @@ func main() {
 		log.Fatalf("Failed to create base directory: %v", err)
 	}
 
+	// Use provided paths or defaults
+	if *dbPath == "" {
+		*dbPath = filepath.Join(baseDir, "clipboard.db")
+	}
+	if *fsPath == "" {
+		*fsPath = filepath.Join(baseDir, "files")
+	}
+
 	// Initialize storage
 	store, err := sqlite.New(storage.Config{
-		DBPath: filepath.Join(baseDir, "clipboard.db"),
-		FSPath: filepath.Join(baseDir, "files"),
+		DBPath: *dbPath,
+		FSPath: *fsPath,
 	})
 	if err != nil {
 		log.Fatalf("Failed to initialize storage: %v", err)
@@ -42,8 +60,11 @@ func main() {
 		log.Fatalf("Failed to start clipboard service: %v", err)
 	}
 
-	log.Printf("Clipboard manager started. Data directory: %s", baseDir)
-	log.Println("Press Ctrl+C to stop")
+	if *verbose {
+		log.Printf("Clipboard manager started")
+		log.Printf("Database: %s", *dbPath)
+		log.Printf("File storage: %s", *fsPath)
+	}
 
 	// Wait for interrupt signal
 	sigChan := make(chan os.Signal, 1)
@@ -51,7 +72,9 @@ func main() {
 	<-sigChan
 
 	// Clean shutdown
-	log.Println("Shutting down...")
+	if *verbose {
+		log.Println("Shutting down...")
+	}
 	if err := clipService.Stop(); err != nil {
 		log.Printf("Error stopping service: %v", err)
 	}

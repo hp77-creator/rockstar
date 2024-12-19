@@ -67,6 +67,42 @@ func (s *ClipboardService) Stop() error {
 	return nil
 }
 
+// GetClipByIndex returns the nth most recent clip (0 being the most recent)
+func (s *ClipboardService) GetClipByIndex(ctx context.Context, index int) (*types.Clip, error) {
+	clips, err := s.store.List(ctx, storage.ListFilter{
+		Limit:  index + 1,
+		Offset: 0,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get clips: %w", err)
+	}
+
+	if len(clips) <= index {
+		return nil, fmt.Errorf("no clip found at index %d", index)
+	}
+
+	return clips[index], nil
+}
+
+// SetClipboard sets the system clipboard to the content of the specified clip
+func (s *ClipboardService) SetClipboard(ctx context.Context, clip *types.Clip) error {
+	if clip == nil {
+		return fmt.Errorf("clip cannot be nil")
+	}
+
+	return s.monitor.SetContent(*clip)
+}
+
+// PasteByIndex sets the clipboard to the nth most recent clip
+func (s *ClipboardService) PasteByIndex(ctx context.Context, index int) error {
+	clip, err := s.GetClipByIndex(ctx, index)
+	if err != nil {
+		return err
+	}
+
+	return s.SetClipboard(ctx, clip)
+}
+
 // handleClipboardChange processes and stores clipboard content
 func (s *ClipboardService) handleClipboardChange(clip types.Clip) error {
 	// Skip empty content

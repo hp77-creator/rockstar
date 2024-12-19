@@ -97,6 +97,32 @@ func (m *DarwinMonitor) OnChange(handler func(types.Clip)) {
 	m.mutex.Unlock()
 }
 
+// SetContent sets the system clipboard content
+func (m *DarwinMonitor) SetContent(clip types.Clip) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	switch clip.Type {
+	case "text":
+		m.pasteboard.SetStringForType(string(clip.Content), appkit.PasteboardType("public.utf8-plain-text"))
+	case "image/png":
+		m.pasteboard.SetDataForType(clip.Content, appkit.PasteboardType("public.png"))
+	case "image/tiff":
+		m.pasteboard.SetDataForType(clip.Content, appkit.PasteboardType("public.tiff"))
+	case "screenshot":
+		// For screenshots, try PNG first, then TIFF
+		m.pasteboard.SetDataForType(clip.Content, appkit.PasteboardType("public.png"))
+	case "file":
+		m.pasteboard.SetStringForType(string(clip.Content), appkit.PasteboardType("public.file-url"))
+	default:
+		return fmt.Errorf("unsupported content type: %s", clip.Type)
+	}
+
+	// Update change count to prevent re-triggering the monitor
+	m.changeCount = m.pasteboard.ChangeCount()
+	return nil
+}
+
 func (m *DarwinMonitor) checkForChanges() {
 	m.mutex.Lock()
 	currentCount := m.pasteboard.ChangeCount()
