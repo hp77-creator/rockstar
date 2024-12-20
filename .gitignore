@@ -1,2 +1,48 @@
+# Already in your .gitignore
 .idea
 bin
+
+# Build artifacts
+**/clipboard-manager
+**/clipboard-manager-bin
+**/build/
+
+# Go specific
+*.exe
+*.test
+*.out
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/
+*.moved-aside
+*.xccheckout
+*.xcscmblueprint
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# IDE - VSCode
+.vscode/
+*.code-workspace
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*~

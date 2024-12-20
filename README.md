@@ -3,8 +3,11 @@
 Not your another clipboard manager.
 
 Copy any number of content be it text, image or whatever.
-Choose to sync them with your choice of Note taking app(current support only for Obsidian)
+Choose to sync them with your choice of Note taking app(current support only for Obsidian), or use the native macOS app for quick access.
 
+## Updates
+
+![working app](image.png)
 
 ## Architecture
 
@@ -127,12 +130,91 @@ clipboard-manager -verbose
 ├── cmd/                    # Command-line tool
 ├── internal/
 │   ├── clipboard/         # Clipboard monitoring
-│   ├── service/           # Core service
+│   ├── server/           # HTTP API server
+│   ├── service/          # Core service
 │   └── storage/          # Storage implementation
+├── macos/                # Native macOS app
+│   └── ClipboardManager/
+│       ├── Sources/      # Swift source files
+│       └── Resources/    # App resources
 ├── pkg/
 │   └── types/            # Public types
 └── examples/             # Example implementations
 ```
+
+## macOS App Setup
+
+### Prerequisites
+- Xcode 14.0 or later
+- macOS 12.0 or later
+- Command Line Tools for Xcode
+
+### Building the App
+
+1. Run the setup script:
+   ```bash
+   chmod +x macos/ClipboardManager/setup.sh
+   ./macos/ClipboardManager/setup.sh
+   ```
+
+2. Open Xcode and create a new project:
+   - File > New > Project
+   - Choose macOS > App
+   - Set product name to "ClipboardManager"
+   - Choose your team and bundle identifier
+
+3. Replace the generated files:
+   - Delete the generated Swift files
+   - Drag files from `ClipboardManager/Sources/` into your project
+   - Add files from `ClipboardManager/Resources/` to your project
+   - Ensure "Copy items if needed" is checked
+
+4. Configure the project:
+   - Select the project in the navigator
+   - Select the ClipboardManager target
+   - Under Signing & Capabilities:
+     - Choose your development team
+     - Set a unique bundle identifier
+   - Under Info:
+     - Add "Application is agent (UIElement)" (LSUIElement) = YES
+     - Add "Privacy - Clipboard Usage Description" with appropriate text
+
+### Running the App
+
+1. Start the Go backend:
+   ```bash
+   go build ./cmd/clipboard-manager
+   ./clipboard-manager --verbose
+   ```
+
+2. Run the macOS app:
+   - Open the Xcode project
+   - Select the ClipboardManager scheme
+   - Click Run (⌘R)
+
+### Features
+- Menu bar integration for quick access
+- Real-time clipboard history display
+- Quick paste functionality
+- Source app tracking
+- Timestamp information
+
+### Troubleshooting
+
+1. HTTP Connection Issues:
+   - Verify the Go service is running (`ps aux | grep clipboard-manager`)
+   - Check the port isn't in use (`lsof -i :54321`)
+   - Review logs with --verbose flag
+
+2. Clipboard Monitoring Issues:
+   - Check Privacy & Security settings
+   - Verify app has clipboard access
+   - Review system logs
+
+3. Build Issues:
+   - Clean build folder (Product > Clean Build Folder)
+   - Reset package caches (`go clean -modcache`)
+   - Update Go dependencies (`go mod tidy`)
 
 ## Development
 

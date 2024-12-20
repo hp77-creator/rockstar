@@ -67,6 +67,14 @@ func (s *ClipboardService) Stop() error {
 	return nil
 }
 
+// GetClips returns a paginated list of clips
+func (s *ClipboardService) GetClips(ctx context.Context, limit, offset int) ([]*types.Clip, error) {
+	return s.store.List(ctx, storage.ListFilter{
+		Limit:  limit,
+		Offset: offset,
+	})
+}
+
 // GetClipByIndex returns the nth most recent clip (0 being the most recent)
 func (s *ClipboardService) GetClipByIndex(ctx context.Context, index int) (*types.Clip, error) {
 	clips, err := s.store.List(ctx, storage.ListFilter{

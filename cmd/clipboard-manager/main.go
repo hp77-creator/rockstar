@@ -2,6 +2,7 @@ package main
 
 import (
 	"clipboard-manager/internal/clipboard"
+	"clipboard-manager/internal/server"
 	"clipboard-manager/internal/service"
 	"clipboard-manager/internal/storage"
 	"clipboard-manager/internal/storage/sqlite"
@@ -14,14 +15,18 @@ import (
 )
 
 func main() {
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds | log.Lshortfile)
+	
 	// Configuration flags
 	var (
 		dbPath  = flag.String("db", "", "Database path (default: ~/.clipboard-manager/clipboard.db)")
 		fsPath  = flag.String("fs", "", "File storage path (default: ~/.clipboard-manager/files)")
-		verbose = flag.Bool("verbose", false, "Enable verbose logging")
+		port    = flag.Int("port", 54321, "HTTP server port")
 	)
 
 	flag.Parse()
+	
+	log.Printf("Starting clipboard manager...")
 
 	// Set up storage paths
 	homeDir, err := os.UserHomeDir()
@@ -60,10 +65,20 @@ func main() {
 		log.Fatalf("Failed to start clipboard service: %v", err)
 	}
 
-	if *verbose {
-		log.Printf("Clipboard manager started")
-		log.Printf("Database: %s", *dbPath)
-		log.Printf("File storage: %s", *fsPath)
+	log.Printf("Using configuration:")
+	log.Printf("- Database: %s", *dbPath)
+	log.Printf("- File storage: %s", *fsPath)
+	log.Printf("- HTTP server port: %d", *port)
+
+	// Initialize HTTP server
+	httpServer := server.New(clipService, server.Config{
+		Port: *port,
+	})
+
+	// Start HTTP server
+	log.Printf("Starting HTTP server...")
+	if err := httpServer.Start(); err != nil {
+		log.Fatalf("Failed to start HTTP server: %v", err)
 	}
 
 	// Wait for interrupt signal
@@ -72,9 +87,14 @@ func main() {
 	<-sigChan
 
 	// Clean shutdown
-	if *verbose {
-		log.Println("Shutting down...")
+	log.Println("Shutting down...")
+
+	// Stop HTTP server first
+	if err := httpServer.Stop(); err != nil {
+		log.Printf("Error stopping HTTP server: %v", err)
 	}
+
+	// Stop clipboard service
 	if err := clipService.Stop(); err != nil {
 		log.Printf("Error stopping service: %v", err)
 	}
