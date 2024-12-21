@@ -7,6 +7,18 @@ enum APIError: Error {
     case decodingError(Error)
 }
 
+struct SearchResult: Codable {
+    let clip: ClipboardItem
+    let score: Double
+    let lastUsed: Date
+    
+    enum CodingKeys: String, CodingKey {
+        case clip
+        case score
+        case lastUsed = "last_used"
+    }
+}
+
 class APIClient: NSObject, URLSessionWebSocketDelegate {
     private let baseURL = "http://localhost:54321"
     private let wsURLs = [
@@ -285,6 +297,58 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
         }
     }
     
+    func searchClips(query: String) async throws -> [ClipboardItem] {
+        var urlComponents = URLComponents(string: "\(baseURL)/api/search")
+        urlComponents?.queryItems = [URLQueryItem(name: "q", value: query)]
+        
+        guard let url = urlComponents?.url else {
+            throw APIError.invalidURL
+        }
+        
+        print("Searching clips with query: \(query)")
+        
+        do {
+            let (data, response) = try await session.data(from: url)
+            
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                print("Invalid response: \(response)")
+                throw APIError.invalidResponse
+            }
+            
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .custom { decoder in
+                let container = try decoder.singleValueContainer()
+                let dateString = try container.decode(String.self)
+                
+                let formats = [
+                    "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
+                    "yyyy-MM-dd'T'HH:mm:ssZ",
+                    "yyyy-MM-dd'T'HH:mm:ss'Z'"
+                ]
+                
+                let formatter = DateFormatter()
+                formatter.locale = Locale(identifier: "en_US_POSIX")
+                
+                for format in formats {
+                    formatter.dateFormat = format
+                    if let date = formatter.date(from: dateString) {
+                        return date
+                    }
+                }
+                
+                print("Failed to parse date: \(dateString)")
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid date format")
+            }
+            
+            let searchResults = try decoder.decode([SearchResult].self, from: data)
+            return searchResults.map { $0.clip }
+        } catch {
+            print("Search error: \(error)")
+            throw APIError.networkError(error)
+        }
+    }
+
     func pasteClip(at index: Int) async throws {
         guard let url = URL(string: "\(baseURL)/api/clips/\(index)/paste") else {
             throw APIError.invalidURL

@@ -3,6 +3,9 @@ import UserNotifications
 
 struct ClipboardHistoryView: View {
     @State private var showToast = false
+    @State private var searchText = ""
+    @State private var isSearching = false
+    @State private var searchTask: Task<Void, Never>?
     @EnvironmentObject private var appState: AppState
     var isInPanel: Bool = false
     @Environment(\.dismiss) private var dismiss
@@ -15,6 +18,81 @@ struct ClipboardHistoryView: View {
     
     var body: some View {
         VStack(spacing: 8) {
+            // Search field
+            TextField("Search clips...", text: $searchText)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .padding(.horizontal)
+                .onChange(of: searchText) { newValue in
+                    // Cancel any existing search task
+                    searchTask?.cancel()
+                    
+                    if newValue.isEmpty {
+                        // Reset to normal list when search is cleared
+                        Task {
+                            await appState.refreshClips()
+                        }
+                    } else {
+                        // Create new search task with debouncing
+                        searchTask = Task {
+                            isSearching = true
+                            try? await Task.sleep(nanoseconds: 300_000_000) // 300ms delay
+                            
+                            if !Task.isCancelled {
+                                // First try local search
+                                let searchTerm = newValue.lowercased()
+                                let localResults = appState.clips.filter { clip in
+                                    // Search in content
+                                    if let text = clip.contentString?.lowercased(),
+                                       text.contains(searchTerm) {
+                                        return true
+                                    }
+                                    // Search in source app
+                                    if let sourceApp = clip.metadata.sourceApp?.lowercased(),
+                                       sourceApp.contains(searchTerm) {
+                                        return true
+                                    }
+                                    // Search in category
+                                    if let category = clip.metadata.category?.lowercased(),
+                                       category.contains(searchTerm) {
+                                        return true
+                                    }
+                                    // Search in tags
+                                    if let tags = clip.metadata.tags,
+                                       tags.contains(where: { $0.lowercased().contains(searchTerm) }) {
+                                        return true
+                                    }
+                                    return false
+                                }
+                                
+                                if !Task.isCancelled {
+                                    if !localResults.isEmpty {
+                                        // Use local results if found
+                                        await MainActor.run {
+                                            appState.clips = localResults
+                                            isSearching = false
+                                        }
+                                    } else {
+                                        // Fall back to backend search if no local results
+                                        do {
+                                            let results = try await appState.apiClient.searchClips(query: newValue)
+                                            if !Task.isCancelled {
+                                                await MainActor.run {
+                                                    appState.clips = results
+                                                }
+                                            }
+                                        } catch {
+                                            print("Search error: \(error)")
+                                        }
+                                        
+                                        await MainActor.run {
+                                            isSearching = false
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             if appState.isDebugMode {
                 if !isInPanel {
                     // Status indicator (only in menu bar)
@@ -37,7 +115,17 @@ struct ClipboardHistoryView: View {
             }
             
             Group {
-                if appState.isLoading {
+                if isSearching {
+                    VStack {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .scaleEffect(0.8)
+                        Text("Searching...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(width: 300, height: 400)
+                } else if appState.isLoading {
                     VStack {
                         ProgressView()
                             .progressViewStyle(.circular)

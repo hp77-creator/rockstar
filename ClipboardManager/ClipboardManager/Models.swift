@@ -15,7 +15,7 @@ private let kCFURLErrorCannotConnectToHost = -1004
 
 class AppState: ObservableObject, ClipboardUpdateDelegate {
     private var goProcess: Process?
-    private let apiClient: APIClient
+    let apiClient: APIClient // Made public for access from views
     @Published var clips: [ClipboardItem] = []
     @Published var error: String?
     @Published var isServiceRunning = false
@@ -186,6 +186,21 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
         }
     }
     
+    func refreshClips() async {
+        do {
+            let clips = try await apiClient.getClips()
+            await MainActor.run {
+                self.isLoading = false
+                self.error = nil
+                self.clips = clips
+            }
+        } catch {
+            await MainActor.run {
+                self.error = "Failed to refresh clips: \(error.localizedDescription)"
+            }
+        }
+    }
+
     private func loadInitialClips() {
         Task {
             do {

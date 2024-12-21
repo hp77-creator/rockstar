@@ -2,6 +2,7 @@ package server
 
 import (
 	"clipboard-manager/internal/service"
+	"clipboard-manager/internal/storage"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -87,6 +88,7 @@ func (s *Server) Start() error {
 		r.Get("/clips", s.handleGetClips)
 		r.Get("/clips/{index}", s.handleGetClip)
 		r.Post("/clips/{index}/paste", s.handlePasteClip)
+		r.Get("/search", s.handleSearch)
 	})
 
 	// Try different addresses if one fails
@@ -192,6 +194,25 @@ func (s *Server) handleGetClip(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(clip)
+}
+
+func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		http.Error(w, "search query is required", http.StatusBadRequest)
+		return
+	}
+
+	results, err := s.clipService.Search(r.Context(), storage.SearchOptions{
+		Query: query,
+		Limit: 50, // reasonable default
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(results)
 }
 
 func (s *Server) handlePasteClip(w http.ResponseWriter, r *http.Request) {

@@ -14,12 +14,37 @@ func (s *SQLiteStorage) Search(opts storage.SearchOptions) ([]storage.SearchResu
 
 	// Apply text search if query provided
 	if opts.Query != "" {
-		// Search in content for text clips
+		// Case-insensitive search in content, source app, and metadata
+		searchTerm := strings.ToLower(opts.Query)
+		
+		// First, get all text clips that match the search term
 		query = query.Where(
-			"(type = 'text' AND content LIKE ?) OR content_hash LIKE ?",
-			"%"+opts.Query+"%",
-			"%"+opts.Query+"%",
+			"(type LIKE 'text%' AND ("+
+			"  (is_external = 0 AND LOWER(CAST(content AS TEXT)) LIKE ?) OR "+
+			"  LOWER(content_hash) LIKE ?"+
+			")) OR "+
+			"LOWER(source_app) LIKE ? OR "+
+			"LOWER(category) LIKE ? OR "+
+			"LOWER(tags) LIKE ?",
+			"%"+searchTerm+"%",
+			"%"+searchTerm+"%",
+			"%"+searchTerm+"%",
+			"%"+searchTerm+"%",
+			"%"+searchTerm+"%",
 		)
+
+		// Also get external text clips
+		var externalClips []storage.ClipModel
+		s.db.Where("type LIKE 'text%' AND is_external = 1").Find(&externalClips)
+
+		// Search through external content
+		for _, clip := range externalClips {
+			if content, err := s.loadExternalContent(&clip); err == nil {
+				if strings.Contains(strings.ToLower(string(content)), searchTerm) {
+					query = query.Or("id = ?", clip.ID)
+				}
+			}
+		}
 	}
 
 	// Apply filters

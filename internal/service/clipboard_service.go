@@ -219,6 +219,17 @@ func (s *ClipboardService) PasteByIndex(ctx context.Context, index int) error {
 	return nil
 }
 
+// Search searches for clips matching the given criteria
+func (s *ClipboardService) Search(ctx context.Context, opts storage.SearchOptions) ([]storage.SearchResult, error) {
+	if searchService, ok := s.store.(storage.SearchService); ok {
+		return searchService.Search(opts)
+	}
+	return nil, &ClipboardError{
+		Op:      "Search",
+		Message: "storage does not implement search",
+	}
+}
+
 // handleClipboardChange processes and stores clipboard content
 func (s *ClipboardService) handleClipboardChange(clip types.Clip) error {
 	// Skip empty content
