@@ -37,6 +37,12 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
     #endif
     
     init() {
+        #if DEBUG
+        print("Running in DEBUG configuration")
+        #else
+        print("Running in RELEASE configuration")
+        #endif
+        
         // Initialize properties before using them
         clips = []
         error = nil

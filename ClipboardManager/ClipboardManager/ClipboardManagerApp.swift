@@ -91,24 +91,26 @@ struct ClipboardManagerApp: App {
                     .cornerRadius(8)
                 }
                 
-                VStack(spacing: 4) {
-                    Text("Debug Info")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    Text("Accessibility: \(hotKeyManager.hasAccessibilityPermissions ? "✅" : "❌")")
-                        .font(.caption)
-                        .foregroundColor(hotKeyManager.hasAccessibilityPermissions ? .green : .red)
-                    
-                    Text("HotKey: \(hotKeyManager.isRegistered ? "✅" : "❌")")
-                        .font(.caption)
-                        .foregroundColor(hotKeyManager.isRegistered ? .green : .red)
-                    
-                    Text("Bundle ID: \(Bundle.main.bundleIdentifier ?? "unknown")")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                if appState.isDebugMode {
+                    VStack(spacing: 4) {
+                        Text("Debug Info")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Text("Accessibility: \(hotKeyManager.hasAccessibilityPermissions ? "✅" : "❌")")
+                            .font(.caption)
+                            .foregroundColor(hotKeyManager.hasAccessibilityPermissions ? .green : .red)
+                        
+                        Text("HotKey: \(hotKeyManager.isRegistered ? "✅" : "❌")")
+                            .font(.caption)
+                            .foregroundColor(hotKeyManager.isRegistered ? .green : .red)
+                        
+                        Text("Bundle ID: \(Bundle.main.bundleIdentifier ?? "unknown")")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 4)
                 }
-                .padding(.vertical, 4)
                 
                 if appState.isLoading {
                     ProgressView("Starting service...")
@@ -131,18 +133,20 @@ struct ClipboardManagerApp: App {
                     .padding(.horizontal)
                 }
                 
-                HStack {
-                    Circle()
-                        .fill(appState.isServiceRunning ? Color.green : Color.red)
-                        .frame(width: 8, height: 8)
-                    Text(appState.isServiceRunning ? "Service Running" : "Service Stopped")
+                if appState.isDebugMode {
+                    HStack {
+                        Circle()
+                            .fill(appState.isServiceRunning ? Color.green : Color.red)
+                            .frame(width: 8, height: 8)
+                        Text(appState.isServiceRunning ? "Service Running" : "Service Stopped")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Text("Clips count: \(appState.clips.count)")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                
-                Text("Clips count: \(appState.clips.count)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
                 
                 ClipboardHistoryView()
                     .environmentObject(appState)
