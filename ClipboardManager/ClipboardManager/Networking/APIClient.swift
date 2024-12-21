@@ -1,10 +1,26 @@
 import Foundation
 
-enum APIError: Error {
+enum APIError: Error, Equatable {
     case invalidURL
     case networkError(Error)
     case invalidResponse
     case decodingError(Error)
+    case sessionInvalidated
+    
+    static func == (lhs: APIError, rhs: APIError) -> Bool {
+        switch (lhs, rhs) {
+        case (.invalidURL, .invalidURL),
+             (.invalidResponse, .invalidResponse),
+             (.sessionInvalidated, .sessionInvalidated):
+            return true
+        case (.networkError(let lhsError), .networkError(let rhsError)):
+            return lhsError.localizedDescription == rhsError.localizedDescription
+        case (.decodingError(let lhsError), .decodingError(let rhsError)):
+            return lhsError.localizedDescription == rhsError.localizedDescription
+        default:
+            return false
+        }
+    }
 }
 
 struct SearchResult: Codable {
@@ -32,14 +48,15 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
     private var reconnectTimer: Timer?
     private var connectionAttempts = 0
     private let maxConnectionAttempts = 3
+    private var isSessionValid = true
     weak var delegate: ClipboardUpdateDelegate?
     
     override init() {
         super.init()
         
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 2
-        config.timeoutIntervalForResource = 5
+        config.timeoutIntervalForRequest = 5  // Increased from 2s to 5s for initial connection
+        config.timeoutIntervalForResource = 10 // Increased from 5s to 10s for total operation
         
         if #available(macOS 11.0, *) {
             config.waitsForConnectivity = true
@@ -54,25 +71,21 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
     
     deinit {
         print("APIClient deinitializing")
-        disconnectWebSocket()
-        session.invalidateAndCancel()
+        disconnect()
     }
     
     // MARK: - WebSocket Methods
     
     private func connectWebSocket() {
-        guard webSocket == nil else { return }
+        guard webSocket == nil, isSessionValid else { return }
         
+        // Reset connection attempts when starting fresh
         if currentWSURLIndex == 0 {
             connectionAttempts = 0
         }
         
-        if connectionAttempts >= maxConnectionAttempts && currentWSURLIndex >= wsURLs.count - 1 {
-            print("Failed to connect after trying all URLs")
-            handleWebSocketError()
-            return
-        }
-        
+        // Don't give up on WebSocket connection, keep retrying
+        // This helps with server that's slow to start
         let wsURL = wsURLs[currentWSURLIndex]
         guard let url = URL(string: wsURL) else {
             print("Invalid WebSocket URL: \(wsURL)")
@@ -86,17 +99,34 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
         
         receiveMessage()
         connectionAttempts += 1
+        
+        // If this attempt fails, try the next URL
+        if connectionAttempts >= maxConnectionAttempts {
+            connectionAttempts = 0
+            currentWSURLIndex = (currentWSURLIndex + 1) % wsURLs.count
+        }
     }
     
     private func disconnectWebSocket() {
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
         isConnected = false
+        reconnectTimer?.invalidate()
+        reconnectTimer = nil
+    }
+    
+    func disconnect() {
+        print("Disconnecting APIClient")
+        isSessionValid = false
+        disconnectWebSocket()
+        session.invalidateAndCancel()
     }
     
     private func receiveMessage() {
+        guard isSessionValid else { return }
+        
         webSocket?.receive { [weak self] result in
-            guard let self = self else { return }
+            guard let self = self, self.isSessionValid else { return }
             
             switch result {
             case .success(let message):
@@ -120,6 +150,7 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
     }
     
     private func handleWebSocketMessage(_ text: String) {
+        guard isSessionValid else { return }
         guard let data = text.data(using: .utf8) else { return }
         
         do {
@@ -162,6 +193,8 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
     }
     
     private func handleWebSocketError() {
+        guard isSessionValid else { return }
+        
         disconnectWebSocket()
         
         if currentWSURLIndex < wsURLs.count - 1 {
@@ -178,7 +211,11 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
         
         reconnectTimer?.invalidate()
         reconnectTimer = Timer.scheduledTimer(withTimeInterval: backoffTime, repeats: false) { [weak self] _ in
-            self?.connectWebSocket()
+            guard let self = self, self.isSessionValid else {
+                print("Session invalidated, cancelling reconnection")
+                return
+            }
+            self.connectWebSocket()
         }
     }
     
@@ -199,6 +236,8 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
     // MARK: - API Methods
     
     func getClips(offset: Int = 0, limit: Int? = nil) async throws -> [ClipboardItem] {
+        guard isSessionValid else { throw APIError.sessionInvalidated }
+        
         let effectiveLimit: Int
         if let limit = limit {
             effectiveLimit = limit
@@ -269,6 +308,8 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
     }
     
     func searchClips(query: String, offset: Int = 0, limit: Int = 20) async throws -> [ClipboardItem] {
+        guard isSessionValid else { throw APIError.sessionInvalidated }
+        
         var urlComponents = URLComponents(string: "\(baseURL)/api/search")
         urlComponents?.queryItems = [
             URLQueryItem(name: "q", value: query),
@@ -325,6 +366,8 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
     }
     
     func pasteClip(at index: Int) async throws {
+        guard isSessionValid else { throw APIError.sessionInvalidated }
+        
         guard let url = URL(string: "\(baseURL)/api/clips/\(index)/paste") else {
             throw APIError.invalidURL
         }
@@ -372,6 +415,8 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
     }
     
     func deleteClip(id: String) async throws {
+        guard isSessionValid else { throw APIError.sessionInvalidated }
+        
         guard let url = URL(string: "\(baseURL)/api/clips/id/\(id)") else {
             throw APIError.invalidURL
         }
@@ -394,6 +439,8 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
     }
     
     func clearClips() async throws {
+        guard isSessionValid else { throw APIError.sessionInvalidated }
+        
         guard let url = URL(string: "\(baseURL)/api/clips") else {
             throw APIError.invalidURL
         }

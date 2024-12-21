@@ -117,14 +117,24 @@ func (s *Server) Start() error {
 			}
 		}()
 
-		// Wait a moment to see if the server starts successfully
+		// Wait up to 2 seconds for server to start successfully
 		select {
 		case err := <-serverErr:
 			lastErr = err
 			log.Printf("Failed to start server on %s: %v", addr, err)
 			continue
-		case <-time.After(100 * time.Millisecond):
-			log.Printf("Server started successfully on %s", addr)
+		case <-time.After(2 * time.Second):
+			// Try to make a test request to verify server is responding
+			client := &http.Client{Timeout: time.Second}
+			resp, err := client.Get(fmt.Sprintf("http://%s/status", addr))
+			if err != nil {
+				lastErr = fmt.Errorf("server health check failed: %v", err)
+				log.Printf("Failed to verify server on %s: %v", addr, err)
+				continue
+			}
+			resp.Body.Close()
+			
+			log.Printf("Server started and verified successfully on %s", addr)
 			return nil
 		}
 	}

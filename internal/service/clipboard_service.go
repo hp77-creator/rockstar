@@ -2,12 +2,16 @@ package service
 
 import (
 	"clipboard-manager/internal/clipboard"
+	"clipboard-manager/internal/obsidian"
 	"clipboard-manager/internal/storage"
 	"clipboard-manager/pkg/types"
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"strconv"
 	"sync"
+	"time"
 )
 
 // Custom error types for better error handling
@@ -31,24 +35,123 @@ func (e *ClipboardError) Unwrap() error {
 
 // ClipboardService manages clipboard monitoring and storage
 type ClipboardService struct {
-	monitor  clipboard.Monitor
-	store    storage.Storage
-	ctx      context.Context
-	cancel   context.CancelFunc
-	wg       sync.WaitGroup
-	handlers []ClipboardChangeHandler
-	mu       sync.RWMutex
+	monitor        clipboard.Monitor
+	store          storage.Storage
+	obsidianSync   *obsidian.SyncService
+	ctx            context.Context
+	cancel         context.CancelFunc
+	wg             sync.WaitGroup
+	handlers       []ClipboardChangeHandler
+	mu             sync.RWMutex
 }
 
 // New creates a new ClipboardService
 func New(monitor clipboard.Monitor, store storage.Storage) *ClipboardService {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &ClipboardService{
+	service := &ClipboardService{
 		monitor: monitor,
 		store:   store,
 		ctx:     ctx,
 		cancel:  cancel,
 	}
+
+	// Log all environment variables
+	log.Printf("Environment variables:")
+	for _, env := range []string{"OBSIDIAN_ENABLED", "OBSIDIAN_VAULT_PATH", "OBSIDIAN_SYNC_INTERVAL", 
+		"HOME", "TMPDIR", "USER", "CLIPBOARD_DB_PATH", "CLIPBOARD_FS_PATH", "CLIPBOARD_API_PORT"} {
+		log.Printf("- %s: %s", env, os.Getenv(env))
+	}
+
+	// Initialize Obsidian sync if enabled
+	if os.Getenv("OBSIDIAN_ENABLED") == "true" {
+		log.Printf("Obsidian sync is enabled")
+		vaultPath := os.Getenv("OBSIDIAN_VAULT_PATH")
+		if vaultPath == "" {
+			log.Printf("Warning: OBSIDIAN_VAULT_PATH is not set")
+			return service
+		}
+
+		// Verify vault path exists and is accessible
+		if info, err := os.Stat(vaultPath); os.IsNotExist(err) {
+			log.Printf("Warning: Obsidian vault path does not exist: %s", vaultPath)
+			return service
+		} else {
+			log.Printf("Vault path verification:")
+			log.Printf("- Path: %s", vaultPath)
+			log.Printf("- Mode: %s", info.Mode().String())
+			log.Printf("- Size: %d", info.Size())
+			log.Printf("- ModTime: %s", info.ModTime())
+			if !info.IsDir() {
+				log.Printf("Warning: Vault path is not a directory")
+				return service
+			}
+		}
+
+		// List vault directory contents
+		if files, err := os.ReadDir(vaultPath); err == nil {
+			log.Printf("Vault directory contents:")
+			for _, file := range files {
+				log.Printf("- %s (%v)", file.Name(), file.IsDir())
+			}
+		} else {
+			log.Printf("Warning: Failed to list vault directory: %v", err)
+		}
+
+		// Get sync interval
+		interval := 5 * time.Minute // default 5 minutes
+		
+		if syncInterval := os.Getenv("OBSIDIAN_SYNC_INTERVAL"); syncInterval != "" {
+			if minutes, err := strconv.Atoi(syncInterval); err == nil {
+				// Ensure minimum 1 minute interval
+				if minutes < 1 {
+					log.Printf("Warning: Sync interval must be at least 1 minute, using default")
+				} else {
+					interval = time.Duration(minutes) * time.Minute
+					log.Printf("Using sync interval: %v", interval)
+				}
+			} else {
+				log.Printf("Warning: Invalid sync interval '%s', using default", syncInterval)
+			}
+		}
+
+		// If we have an existing sync service, try to update its configuration
+		if service.obsidianSync != nil {
+			var needsReset bool
+
+			// Try to update vault path
+			if err := service.obsidianSync.UpdateVaultPath(vaultPath); err != nil {
+				log.Printf("Failed to update vault path: %v", err)
+				needsReset = true
+			} else {
+				log.Printf("Updated vault path for existing sync service")
+			}
+
+			// Update sync interval
+			service.obsidianSync.UpdateSyncInterval(interval)
+			log.Printf("Updated sync interval for existing sync service")
+
+			if !needsReset {
+				return service
+			}
+
+			// Reset service if needed
+			service.obsidianSync = nil
+		}
+
+		log.Printf("Initializing Obsidian sync with vault path: %s, interval: %v", vaultPath, interval)
+		syncService, err := obsidian.New(store, obsidian.Config{
+			VaultPath:    vaultPath,
+			SyncInterval: interval,
+		})
+		if err != nil {
+			log.Printf("Failed to initialize Obsidian sync: %v", err)
+		} else {
+			service.obsidianSync = syncService
+			log.Printf("Obsidian sync service initialized successfully")
+		}
+	}
+
+	return service
 }
 
 // RegisterHandler adds a new clipboard change handler
@@ -60,6 +163,18 @@ func (s *ClipboardService) RegisterHandler(handler ClipboardChangeHandler) {
 
 // Start begins monitoring and storing clipboard changes
 func (s *ClipboardService) Start() error {
+	// Start Obsidian sync if configured
+	if s.obsidianSync != nil {
+		log.Printf("Starting Obsidian sync service...")
+		if err := s.obsidianSync.Start(s.ctx); err != nil {
+			log.Printf("Failed to start Obsidian sync: %v", err)
+		} else {
+			log.Printf("Obsidian sync service started successfully")
+		}
+	} else {
+		log.Printf("No Obsidian sync service configured")
+	}
+
 	// Set up clipboard change handler
 	s.monitor.OnChange(func(clip types.Clip) {
 		s.wg.Add(1)
@@ -107,6 +222,11 @@ func (s *ClipboardService) Stop() error {
 			Message: "failed to stop clipboard monitor",
 			Err:     err,
 		}
+	}
+
+	// Stop Obsidian sync if running
+	if s.obsidianSync != nil {
+		s.obsidianSync.Stop()
 	}
 
 	// Wait for ongoing operations to complete
