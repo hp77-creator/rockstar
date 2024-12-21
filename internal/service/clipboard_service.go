@@ -219,6 +219,41 @@ func (s *ClipboardService) PasteByIndex(ctx context.Context, index int) error {
 	return nil
 }
 
+// DeleteClip deletes a clip by its ID
+func (s *ClipboardService) DeleteClip(ctx context.Context, id string) error {
+	if err := s.store.Delete(ctx, id); err != nil {
+		return &ClipboardError{
+			Op:      "DeleteClip",
+			Message: "failed to delete clip",
+			Err:     err,
+		}
+	}
+	return nil
+}
+
+// ClearClips deletes all stored clips
+func (s *ClipboardService) ClearClips(ctx context.Context) error {
+	clips, err := s.GetClips(ctx, 1000, 0) // Get all clips
+	if err != nil {
+		return &ClipboardError{
+			Op:      "ClearClips",
+			Message: "failed to get clips",
+			Err:     err,
+		}
+	}
+	
+	for _, clip := range clips {
+		if err := s.store.Delete(ctx, clip.ID); err != nil {
+			return &ClipboardError{
+				Op:      "ClearClips",
+				Message: fmt.Sprintf("failed to delete clip %s", clip.ID),
+				Err:     err,
+			}
+		}
+	}
+	return nil
+}
+
 // Search searches for clips matching the given criteria
 func (s *ClipboardService) Search(ctx context.Context, opts storage.SearchOptions) ([]storage.SearchResult, error) {
 	if searchService, ok := s.store.(storage.SearchService); ok {

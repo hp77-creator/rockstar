@@ -38,10 +38,9 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
         super.init()
         
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 2 // Shorter timeout for faster failure detection
+        config.timeoutIntervalForRequest = 2
         config.timeoutIntervalForResource = 5
         
-        // Allow local network connections
         if #available(macOS 11.0, *) {
             config.waitsForConnectivity = true
             config.allowsExpensiveNetworkAccess = true
@@ -59,22 +58,21 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
         session.invalidateAndCancel()
     }
     
+    // MARK: - WebSocket Methods
+    
     private func connectWebSocket() {
         guard webSocket == nil else { return }
         
-        // Reset connection attempts if we're trying a new URL
         if currentWSURLIndex == 0 {
             connectionAttempts = 0
         }
         
-        // Check if we've exceeded max attempts for all URLs
         if connectionAttempts >= maxConnectionAttempts && currentWSURLIndex >= wsURLs.count - 1 {
             print("Failed to connect after trying all URLs")
             handleWebSocketError()
             return
         }
         
-        // Get current URL to try
         let wsURL = wsURLs[currentWSURLIndex]
         guard let url = URL(string: wsURL) else {
             print("Invalid WebSocket URL: \(wsURL)")
@@ -112,7 +110,6 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
                 @unknown default:
                     break
                 }
-                // Continue receiving messages
                 self.receiveMessage()
                 
             case .failure(let error):
@@ -167,7 +164,6 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
     private func handleWebSocketError() {
         disconnectWebSocket()
         
-        // Try next URL if available
         if currentWSURLIndex < wsURLs.count - 1 {
             currentWSURLIndex += 1
             print("Switching to next WebSocket URL: \(wsURLs[currentWSURLIndex])")
@@ -175,10 +171,8 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
             return
         }
         
-        // Reset to first URL for next attempt
         currentWSURLIndex = 0
         
-        // Schedule reconnection with exponential backoff
         let backoffTime = min(pow(2.0, Double(connectionAttempts)), 30.0)
         print("Scheduling reconnection in \(backoffTime) seconds")
         
@@ -188,11 +182,12 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
         }
     }
     
-    // URLSessionWebSocketDelegate methods
+    // MARK: - URLSessionWebSocketDelegate
+    
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
         print("WebSocket connected successfully to \(wsURLs[currentWSURLIndex])")
         isConnected = true
-        connectionAttempts = 0  // Reset attempts on successful connection
+        connectionAttempts = 0
     }
     
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
@@ -201,18 +196,17 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
         handleWebSocketError()
     }
     
-    // Keep the HTTP methods for initial load and manual refresh
+    // MARK: - API Methods
+    
     func getClips(offset: Int = 0, limit: Int? = nil) async throws -> [ClipboardItem] {
-        // Get the user's configured limit from UserDefaults if not provided
         let effectiveLimit: Int
         if let limit = limit {
             effectiveLimit = limit
         } else {
             let userLimit = UserDefaults.standard.integer(forKey: UserDefaultsKeys.maxClipsShown)
-            effectiveLimit = userLimit > 0 ? userLimit : 10 // fallback to 10 if not set
+            effectiveLimit = userLimit > 0 ? userLimit : 10
         }
         
-        // Construct URL with limit and offset parameters
         var urlComponents = URLComponents(string: "\(baseURL)/api/clips")
         urlComponents?.queryItems = [
             URLQueryItem(name: "limit", value: String(effectiveLimit)),
@@ -234,17 +228,11 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
                 throw APIError.invalidResponse
             }
             
-            // Print raw JSON for debugging
-            if let jsonString = String(data: data, encoding: .utf8) {
-                print("Raw JSON response from \(url.absoluteString): \(jsonString)")
-            }
-            
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .custom { decoder in
                 let container = try decoder.singleValueContainer()
                 let dateString = try container.decode(String.self)
                 
-                // Try parsing with different date formats
                 let formats = [
                     "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
                     "yyyy-MM-dd'T'HH:mm:ssZ",
@@ -265,37 +253,12 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
                 throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid date format")
             }
             
-            // First try to decode the raw response to inspect it
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
-                print("Raw JSON structure:")
-                for (index, item) in json.enumerated() {
-                    print("Item \(index):")
-                    for (key, value) in item {
-                        print("  \(key): \(type(of: value)) = \(value)")
-                    }
-                }
-            }
-            
             do {
                 let clips = try decoder.decode([ClipboardItem].self, from: data)
                 print("Successfully decoded \(clips.count) clips")
                 return clips
             } catch {
                 print("Decoding error: \(error)")
-                if let decodingError = error as? DecodingError {
-                    switch decodingError {
-                    case .keyNotFound(let key, _):
-                        print("Missing key: \(key)")
-                    case .typeMismatch(let type, let context):
-                        print("Type mismatch: expected \(type) at \(context.codingPath)")
-                    case .valueNotFound(let type, let context):
-                        print("Value not found: expected \(type) at \(context.codingPath)")
-                    case .dataCorrupted(let context):
-                        print("Data corrupted: \(context)")
-                    @unknown default:
-                        print("Unknown decoding error")
-                    }
-                }
                 throw APIError.decodingError(error)
             }
         } catch let error as DecodingError {
@@ -360,7 +323,7 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
             throw APIError.networkError(error)
         }
     }
-
+    
     func pasteClip(at index: Int) async throws {
         guard let url = URL(string: "\(baseURL)/api/clips/\(index)/paste") else {
             throw APIError.invalidURL
@@ -370,7 +333,7 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.timeoutInterval = 5 // 5 second timeout
+        request.timeoutInterval = 5
         
         do {
             let (data, response) = try await session.data(for: request)
@@ -381,7 +344,6 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
             }
             
             guard httpResponse.statusCode == 200 else {
-                // Try to decode detailed error response
                 if let errorData = try? JSONDecoder().decode([String: String].self, from: data) {
                     let errorMessage = errorData["error"] ?? errorData["detail"] ?? "Unknown error"
                     print("Server error: HTTP \(httpResponse.statusCode), \(errorMessage)")
@@ -407,5 +369,49 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
             print("Unexpected error during paste: \(error)")
             throw APIError.networkError(error)
         }
+    }
+    
+    func deleteClip(id: String) async throws {
+        guard let url = URL(string: "\(baseURL)/api/clips/id/\(id)") else {
+            throw APIError.invalidURL
+        }
+        
+        print("Sending delete request for clip: \(id)")
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.timeoutInterval = 5
+        
+        let (_, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            print("Invalid response: \(response)")
+            throw APIError.invalidResponse
+        }
+        
+        print("Successfully deleted clip \(id)")
+    }
+    
+    func clearClips() async throws {
+        guard let url = URL(string: "\(baseURL)/api/clips") else {
+            throw APIError.invalidURL
+        }
+        
+        print("Sending clear all clips request")
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.timeoutInterval = 5
+        
+        let (_, response) = try await session.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            print("Invalid response: \(response)")
+            throw APIError.invalidResponse
+        }
+        
+        print("Successfully cleared all clips")
     }
 }

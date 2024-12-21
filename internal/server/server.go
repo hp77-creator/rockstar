@@ -88,6 +88,8 @@ func (s *Server) Start() error {
 		r.Get("/clips", s.handleGetClips)
 		r.Get("/clips/{index}", s.handleGetClip)
 		r.Post("/clips/{index}/paste", s.handlePasteClip)
+		r.Delete("/clips/id/{id}", s.handleDeleteClip)
+		r.Delete("/clips", s.handleClearClips)
 		r.Get("/search", s.handleSearch)
 	})
 
@@ -213,6 +215,32 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(results)
+}
+
+func (s *Server) handleDeleteClip(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		http.Error(w, "clip ID is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.clipService.DeleteClip(r.Context(), id); err != nil {
+		log.Printf("Error deleting clip %s: %v", id, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleClearClips(w http.ResponseWriter, r *http.Request) {
+	if err := s.clipService.ClearClips(r.Context()); err != nil {
+		log.Printf("Error clearing clips: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) handlePasteClip(w http.ResponseWriter, r *http.Request) {
