@@ -3,38 +3,70 @@ import AppKit
 
 @main
 struct ClipboardManagerApp: App {
-    // Keep strong reference to NSApplication
+    // Keep strong reference to NSApplication and coordinator
     private let app = NSApplication.shared
     @StateObject private var appState = AppState()
     
-    init() {
-        print("ClipboardManagerApp initializing...")
+    // Use a class-based coordinator to handle lifecycle
+    private class AppCoordinator {
+        let hotKeyManager = HotKeyManager.shared
+        private var observers: [NSObjectProtocol] = []
+        private var accessibilityCheckTimer: Timer?
         
-        // Request accessibility permissions
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-        let trusted = AXIsProcessTrustedWithOptions(options as CFDictionary)
-        print("Accessibility permissions granted:", trusted)
+        deinit {
+            observers.forEach { NotificationCenter.default.removeObserver($0) }
+            accessibilityCheckTimer?.invalidate()
+        }
         
-        if !trusted {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                let alert = NSAlert()
-                alert.messageText = "Accessibility Access Required"
-                alert.informativeText = "Please grant accessibility access in System Preferences > Security & Privacy > Privacy > Accessibility to enable keyboard shortcuts."
-                alert.alertStyle = .warning
-                alert.addButton(withTitle: "Open System Preferences")
-                alert.addButton(withTitle: "Later")
-                
-                if alert.runModal() == .alertFirstButtonReturn {
-                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+        func setup(appState: AppState) {
+            // Initial accessibility check
+            checkAndHandleAccessibility(appState: appState)
+            
+            // Set up periodic accessibility check
+            accessibilityCheckTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+                self?.checkAndHandleAccessibility(appState: appState)
+            }
+            
+            // Set up termination notification observer
+            let terminationObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.willTerminateNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self, weak appState] _ in
+                print("Application will terminate, cleaning up...")
+                self?.hotKeyManager.unregister()
+                appState?.cleanup()
+            }
+            
+            // Store observers for cleanup
+            observers.append(terminationObserver)
+        }
+        
+        private func checkAndHandleAccessibility(appState: AppState) {
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
+            let trusted = AXIsProcessTrustedWithOptions(options as CFDictionary)
+            
+            if trusted {
+                // Only register if not already registered
+                if !hotKeyManager.isRegistered {
+                    print("Registering hotkey after accessibility granted")
+                    hotKeyManager.register(appState: appState)
+                }
+            } else {
+                // Unregister if permissions were revoked
+                if hotKeyManager.isRegistered {
+                    print("Unregistering hotkey after accessibility revoked")
+                    hotKeyManager.unregister()
                 }
             }
         }
-        
-        // Set up termination notification observer
-        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [appState] _ in
-            print("Application will terminate, cleaning up...")
-            appState.cleanup()
-        }
+    }
+    
+    private let coordinator = AppCoordinator()
+    
+    init() {
+        print("ClipboardManagerApp initializing...")
+        coordinator.setup(appState: appState)
     }
     
     var body: some Scene {
@@ -82,11 +114,6 @@ struct ClipboardManagerApp: App {
                     Text("Accessibility: \(trusted ? "✅" : "❌")")
                         .font(.caption)
                         .foregroundColor(trusted ? .green : .red)
-                    
-                    Text("Last Key: \(appState.lastKeyEvent)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
                 }
                 .padding(.vertical, 4)
                 

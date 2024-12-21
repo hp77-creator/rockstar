@@ -38,7 +38,7 @@ struct PanelView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            ClipboardHistoryView(isInPanel: true)
+            ClipboardHistoryView(isInPanel: true, selectedIndex: $selectedIndex)
                 .environmentObject(appState)
         }
         .frame(width: 300, height: 400)
@@ -46,15 +46,22 @@ struct PanelView: View {
         .cornerRadius(8)
         .shadow(radius: 5)
         .onAppear {
+            // Reset selection when panel appears
+            selectedIndex = 0
+            
             NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 switch event.keyCode {
                 case 125: // Down arrow
-                    selectedIndex = min(selectedIndex + 1, appState.clips.count - 1)
+                    if !appState.clips.isEmpty {
+                        selectedIndex = min(selectedIndex + 1, appState.clips.count - 1)
+                    }
                     return nil
                 case 126: // Up arrow
-                    selectedIndex = max(selectedIndex - 1, 0)
+                    if !appState.clips.isEmpty {
+                        selectedIndex = max(selectedIndex - 1, 0)
+                    }
                     return nil
-                case 36: // Return key
+                case 36, 76: // Return key or numpad enter
                     if !appState.clips.isEmpty {
                         appState.pasteClip(at: selectedIndex)
                         PanelWindowManager.hidePanel()
@@ -77,12 +84,42 @@ struct PanelWindowManager {
     
     static func showPanel(with appState: AppState) {
         if panel == nil {
-            let screen = NSScreen.main?.visibleFrame ?? .zero
+            // Get the current mouse location
+            let mouseLocation = NSEvent.mouseLocation
+            let screen = NSScreen.screens.first { screen in
+                screen.frame.contains(mouseLocation)
+            } ?? NSScreen.main ?? NSScreen.screens.first!
+            
+            // Convert mouse location to screen coordinates
+            let screenFrame = screen.visibleFrame
+            
+            // Calculate panel position
+            let panelWidth: CGFloat = 300
+            let panelHeight: CGFloat = 400
+            
+            // Start with mouse position
+            var panelX = mouseLocation.x - panelWidth/2
+            var panelY = mouseLocation.y - panelHeight - 10 // 10px below cursor
+            
+            // Ensure panel stays within screen bounds
+            if panelX + panelWidth > screenFrame.maxX {
+                panelX = screenFrame.maxX - panelWidth - 10
+            }
+            if panelX < screenFrame.minX {
+                panelX = screenFrame.minX + 10
+            }
+            if panelY + panelHeight > screenFrame.maxY {
+                panelY = screenFrame.maxY - panelHeight - 10
+            }
+            if panelY < screenFrame.minY {
+                panelY = screenFrame.minY + 10
+            }
+            
             let panelRect = NSRect(
-                x: screen.midX - 150,
-                y: screen.midY - 200,
-                width: 300,
-                height: 400
+                x: panelX,
+                y: panelY,
+                width: panelWidth,
+                height: panelHeight
             )
             panel = ClipboardPanel(contentRect: panelRect)
             

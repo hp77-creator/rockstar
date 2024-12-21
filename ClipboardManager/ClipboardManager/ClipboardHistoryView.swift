@@ -4,6 +4,12 @@ struct ClipboardHistoryView: View {
     @EnvironmentObject private var appState: AppState
     var isInPanel: Bool = false
     @Environment(\.dismiss) private var dismiss
+    @Binding var selectedIndex: Int
+    
+    init(isInPanel: Bool = false, selectedIndex: Binding<Int> = .constant(0)) {
+        self.isInPanel = isInPanel
+        self._selectedIndex = selectedIndex
+    }
     
     var body: some View {
         VStack(spacing: 8) {
@@ -59,13 +65,13 @@ struct ClipboardHistoryView: View {
                     .frame(width: 300, height: 400)
                 } else {
                     List(Array(appState.clips.enumerated()), id: \.element.id) { index, clip in
-                        ClipboardItemView(item: clip) {
+                        ClipboardItemView(item: clip, isSelected: index == selectedIndex) {
                             appState.pasteClip(at: index)
                             if isInPanel {
                                 PanelWindowManager.hidePanel()
                             }
                         }
-                        .listRowBackground(Color.clear)
+                        .listRowBackground(index == selectedIndex ? Color.blue.opacity(0.2) : Color.clear)
                     }
                     .frame(width: 300, height: isInPanel ? 300 : 400)
                     .listStyle(.plain)
@@ -78,6 +84,7 @@ struct ClipboardHistoryView: View {
 
 struct ClipboardItemView: View {
     let item: ClipboardItem
+    let isSelected: Bool
     let onPaste: () -> Void
     
     @State private var isHovered = false
@@ -116,7 +123,17 @@ struct ClipboardItemView: View {
             }
         }
         .padding(.vertical, 4)
-        .background(isHovered ? Color.gray.opacity(0.1) : Color.clear)
+        .background(
+            Group {
+                if isSelected {
+                    Color.blue.opacity(0.2)
+                } else if isHovered {
+                    Color.gray.opacity(0.1)
+                } else {
+                    Color.clear
+                }
+            }
+        )
         .cornerRadius(6)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.2)) {

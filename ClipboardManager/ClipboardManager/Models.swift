@@ -12,10 +12,7 @@ private let kCFURLErrorCannotConnectToHost = -1004
 class AppState: ObservableObject, ClipboardUpdateDelegate {
     private var goProcess: Process?
     private let apiClient: APIClient
-    private var eventTap: CFMachPort?
-    
     @Published var clips: [ClipboardItem] = []
-    @Published var lastKeyEvent: String = "" // For debugging
     @Published var error: String?
     @Published var isServiceRunning = false
     @Published var isLoading = false
@@ -34,83 +31,7 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
         // Set delegate after initialization
         client.delegate = self
         
-        // Setup global shortcut
-        setupGlobalShortcut()
-        
         startGoService()
-    }
-    
-    private func setupGlobalShortcut() {
-        print("Setting up event tap...")
-        
-        // Get app bundle info for debugging
-        if let bundleID = Bundle.main.bundleIdentifier {
-            print("Bundle ID:", bundleID)
-        }
-        
-        // Request accessibility permissions
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-        let accessibilityEnabled = AXIsProcessTrustedWithOptions(options as CFDictionary)
-        print("Accessibility permissions granted:", accessibilityEnabled)
-        
-        // Callback for event tap
-        let callback: CGEventTapCallBack = { proxy, type, event, refcon in
-            guard let context = refcon else { return Unmanaged.passUnretained(event) }
-            let appState = Unmanaged<AppState>.fromOpaque(context).takeUnretainedValue()
-            
-            if type == .keyDown {
-                let flags = event.flags
-                let keycode = event.getIntegerValueField(.keyboardEventKeycode)
-                
-                // Debug logging
-                print("Key event - keycode: \(keycode), flags: \(flags.rawValue)")
-                DispatchQueue.main.async {
-                    appState.lastKeyEvent = "Key: \(keycode), flags: \(flags.rawValue)"
-                }
-                
-                // Check for Cmd+Shift+V (keycode 9 is 'V')
-                if flags.contains(.maskCommand) && flags.contains(.maskShift) && keycode == 9 {
-                    print("Shortcut detected: Cmd+Shift+V")
-                    DispatchQueue.main.async {
-                        PanelWindowManager.togglePanel(with: appState)
-                    }
-                    // Return nil to consume the event
-                    return nil
-                }
-            }
-            
-            return Unmanaged.passUnretained(event)
-        }
-        
-        // Create event tap
-        let eventMask = (1 << CGEventType.keyDown.rawValue)
-        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-        
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: CGEventMask(eventMask),
-            callback: callback,
-            userInfo: selfPtr
-        ) else {
-            print("❌ Failed to create event tap")
-            self.lastKeyEvent = "Failed to create event tap"
-            return
-        }
-        
-        // Create run loop source
-        let runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, .commonModes)
-        
-        // Enable event tap
-        CGEvent.tapEnable(tap: tap, enable: true)
-        
-        // Store event tap for cleanup
-        eventTap = tap
-        
-        print("✅ Event tap setup successfully")
-        self.lastKeyEvent = "Event tap initialized"
     }
     
     
@@ -374,10 +295,6 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
     }
     
     deinit {
-        if let tap = eventTap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-            print("Event tap disabled")
-        }
         cleanup()
     }
 }
