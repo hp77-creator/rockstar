@@ -1,13 +1,21 @@
-# Clipboard-manager
+# Clipboard Manager
 
-Not your another clipboard manager.
+A powerful clipboard manager for macOS that seamlessly integrates with your workflow. Copy any content - text, images, or files - and access them quickly through a native macOS app. Optionally sync your clipboard history with Obsidian for permanent storage and organization.
 
-Copy any number of content be it text, image or whatever.
-Choose to sync them with your choice of Note taking app(current support only for Obsidian), or use the native macOS app for quick access.
+![Clipboard Manager App](images/app.png)
 
-## Updates
+## Features
 
-![working app](image.png)
+- **Quick Access**: Access your clipboard history instantly through the menu bar
+- **Universal Search**: Find any copied content quickly with the powerful search interface
+  ![Search Interface](images/search.png)
+- **Rich Content Support**: 
+  - Text with formatting
+  - Images and files
+  - Source application tracking
+  - Automatic metadata extraction
+- **Obsidian Integration**: Sync selected clips to your Obsidian vault
+- **Privacy-Focused**: All data stored locally on your machine
 
 ## Architecture
 
@@ -29,212 +37,63 @@ Choose to sync them with your choice of Note taking app(current support only for
     └─────────────────┘  └────────┘
 ```
 
-## Core Features
+The application is built with a hybrid architecture:
+- **Frontend**: Native macOS app built with SwiftUI for optimal performance and integration
+- **Backend**: Go service handling clipboard monitoring, storage, and search
+- **Storage**: SQLite with FTS5 for efficient full-text search
+- **Sync**: Optional Obsidian integration for permanent storage
 
-1. **Clipboard Monitoring**
-   - Native macOS clipboard integration
-   - Support for text, images, and files
-   - Automatic metadata extraction
-   - Source application tracking
-
-2. **Storage System**
-   - Hybrid storage approach:
-     - Small items (<10MB) stored in SQLite
-     - Large items (10MB-100MB) stored in filesystem
-     - Content deduplication using SHA-256 hashing
-   - Metadata storage and indexing
-   - CRUD operations with context support
-
-3. **Search Capabilities**
-   - Full-text search for text content
-   - Filter by content type
-   - Sort by timestamp or usage
-   - Tag-based filtering
-
-## Usage
-
-### Basic Usage
-
-```go
-// Initialize storage
-store, err := sqlite.New(storage.Config{
-    DBPath: "clipboard.db",
-    FSPath: "files",
-})
-
-// Create clipboard monitor
-monitor := clipboard.NewMonitor()
-
-// Create and start service
-clipService := service.New(monitor, store)
-clipService.Start()
-defer clipService.Stop()
-```
-
-### Custom Implementation
-
-You can implement your own storage or monitor by implementing the interfaces:
-
-```go
-// Custom storage implementation
-type MyStorage struct {
-    // Your fields
-}
-
-func (s *MyStorage) Store(ctx context.Context, content []byte, clipType string, metadata types.Metadata) (*types.Clip, error) {
-    // Your implementation
-}
-
-// Custom monitor implementation
-type MyMonitor struct {
-    // Your fields
-}
-
-func (m *MyMonitor) Start() error {
-    // Your implementation
-}
-```
-
-See `examples/core_usage.go` for more detailed examples.
-
-## Command Line Tool
-
-The included command-line tool provides a simple way to run the clipboard manager:
-
-```bash
-# Run with default settings
-clipboard-manager
-
-# Run with custom paths
-clipboard-manager -db /path/to/db -fs /path/to/files
-
-# Run with verbose logging
-clipboard-manager -verbose
-```
-
-## Example Implementations
-
-1. **CLI Example** (`examples/cli/`)
-   - Command-line interface for searching and pasting
-   - Basic clipboard operations
-
-2. **TUI Example** (`examples/tui/`)
-   - Terminal user interface
-   - Interactive clipboard history browsing
-   - Vim-style keybindings
-
-## Project Structure
-
-```
-.
-├── cmd/                    # Command-line tool
-├── internal/
-│   ├── clipboard/         # Clipboard monitoring
-│   ├── server/           # HTTP API server
-│   ├── service/          # Core service
-│   └── storage/          # Storage implementation
-├── macos/                # Native macOS app
-│   └── ClipboardManager/
-│       ├── Sources/      # Swift source files
-│       └── Resources/    # App resources
-├── pkg/
-│   └── types/            # Public types
-└── examples/             # Example implementations
-```
-
-## macOS App Setup
+## Installation
 
 ### Prerequisites
-- Xcode 14.0 or later
 - macOS 12.0 or later
-- Command Line Tools for Xcode
+- [Download the latest release](https://github.com/yourusername/clipboard-manager/releases)
 
-### Building the App
-
-1. Run the setup script:
-   ```bash
-   chmod +x macos/ClipboardManager/setup.sh
-   ./macos/ClipboardManager/setup.sh
-   ```
-
-2. Open Xcode and create a new project:
-   - File > New > Project
-   - Choose macOS > App
-   - Set product name to "ClipboardManager"
-   - Choose your team and bundle identifier
-
-3. Replace the generated files:
-   - Delete the generated Swift files
-   - Drag files from `ClipboardManager/Sources/` into your project
-   - Add files from `ClipboardManager/Resources/` to your project
-   - Ensure "Copy items if needed" is checked
-
-4. Configure the project:
-   - Select the project in the navigator
-   - Select the ClipboardManager target
-   - Under Signing & Capabilities:
-     - Choose your development team
-     - Set a unique bundle identifier
-   - Under Info:
-     - Add "Application is agent (UIElement)" (LSUIElement) = YES
-     - Add "Privacy - Clipboard Usage Description" with appropriate text
-
-### Running the App
-
-1. Start the Go backend:
-   ```bash
-   go build ./cmd/clipboard-manager
-   ./clipboard-manager --verbose
-   ```
-
-2. Run the macOS app:
-   - Open the Xcode project
-   - Select the ClipboardManager scheme
-   - Click Run (⌘R)
-
-### Features
-- Menu bar integration for quick access
-- Real-time clipboard history display
-- Quick paste functionality
-- Source app tracking
-- Timestamp information
-
-### Troubleshooting
-
-1. HTTP Connection Issues:
-   - Verify the Go service is running (`ps aux | grep clipboard-manager`)
-   - Check the port isn't in use (`lsof -i :54321`)
-   - Review logs with --verbose flag
-
-2. Clipboard Monitoring Issues:
-   - Check Privacy & Security settings
-   - Verify app has clipboard access
-   - Review system logs
-
-3. Build Issues:
-   - Clean build folder (Product > Clean Build Folder)
-   - Reset package caches (`go clean -modcache`)
-   - Update Go dependencies (`go mod tidy`)
+### Setup
+1. Download and extract the latest release
+2. Move ClipboardManager.app to your Applications folder
+3. Launch the app - it will appear in your menu bar
+4. Grant necessary permissions when prompted
 
 ## Development
 
 ### Prerequisites
 - Go 1.21 or later
+- Xcode 14.0 or later
 - SQLite
 
-### Building
+### Project Structure
+```
+.
+├── ClipboardManager/       # Native macOS SwiftUI app
+├── cmd/                    # Command-line tools
+├── internal/              # Core Go implementation
+│   ├── clipboard/         # Clipboard monitoring
+│   ├── obsidian/         # Obsidian integration
+│   ├── server/           # HTTP API server
+│   ├── service/          # Core service
+│   └── storage/          # Storage implementation
+└── examples/             # Example implementations
+```
+
+### Building from Source
+
+1. Build the Go backend:
 ```bash
 go build ./cmd/clipboard-manager
 ```
+
+2. Open the Xcode project:
+```bash
+open ClipboardManager/ClipboardManager.xcodeproj
+```
+
+3. Build and run the macOS app through Xcode
 
 ### Testing
 ```bash
 go test ./...
 ```
-
-## License
-
-MIT License - see LICENSE file
 
 ## Contributing
 
@@ -243,3 +102,7 @@ MIT License - see LICENSE file
 3. Commit your changes
 4. Push to the branch
 5. Create a new Pull Request
+
+## License
+
+MIT License - see LICENSE file
