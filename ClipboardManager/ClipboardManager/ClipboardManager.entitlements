@@ -16,5 +16,11 @@
     <array>
         <string>com.apple.systemevents</string>
     </array>
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+    <key>com.apple.security.temporary-exception.accessibility</key>
+    <true/>
+    <key>com.apple.security.accessibility</key>
+    <true/>
 </dict>
 </plist>

@@ -2,17 +2,21 @@ import SwiftUI
 
 struct ClipboardHistoryView: View {
     @EnvironmentObject private var appState: AppState
+    var isInPanel: Bool = false
+    @Environment(\.dismiss) private var dismiss
     
     var body: some View {
         VStack(spacing: 8) {
-            // Status indicator
-            HStack {
-                Circle()
-                    .fill(appState.isServiceRunning ? Color.green : Color.red)
-                    .frame(width: 8, height: 8)
-                Text(appState.isServiceRunning ? "Service Running" : "Service Stopped")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+            if !isInPanel {
+                // Status indicator (only in menu bar)
+                HStack {
+                    Circle()
+                        .fill(appState.isServiceRunning ? Color.green : Color.red)
+                        .frame(width: 8, height: 8)
+                    Text(appState.isServiceRunning ? "Service Running" : "Service Stopped")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
             
             if let error = appState.error {
@@ -57,9 +61,14 @@ struct ClipboardHistoryView: View {
                     List(Array(appState.clips.enumerated()), id: \.element.id) { index, clip in
                         ClipboardItemView(item: clip) {
                             appState.pasteClip(at: index)
+                            if isInPanel {
+                                PanelWindowManager.hidePanel()
+                            }
                         }
+                        .listRowBackground(Color.clear)
                     }
-                    .frame(width: 300, height: 400)
+                    .frame(width: 300, height: isInPanel ? 300 : 400)
+                    .listStyle(.plain)
                 }
             }
         }
