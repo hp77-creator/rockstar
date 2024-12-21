@@ -7,25 +7,42 @@ private let kCFURLErrorConnectionRefused = 61
 private let kCFURLErrorTimedOut = -1001
 private let kCFURLErrorCannotConnectToHost = -1004
 
-class AppState: ObservableObject {
+class AppState: ObservableObject, ClipboardUpdateDelegate {
     private var goProcess: Process?
-    private var pollingTimer: Timer?
-    private let apiClient = APIClient()
+    private let apiClient: APIClient
     @Published var clips: [ClipboardItem] = []
     @Published var error: String?
     @Published var isServiceRunning = false
     @Published var isLoading = false
     
     init() {
+        // Initialize properties before using them
+        clips = []
+        error = nil
+        isServiceRunning = false
+        isLoading = false
+        
+        // Create temporary APIClient
+        let client = APIClient()
+        self.apiClient = client
+        
+        // Set delegate after initialization
+        client.delegate = self
+        
         startGoService()
+    }
+    
+    func didReceiveNewClip(_ clip: ClipboardItem) {
+        DispatchQueue.main.async {
+            self.clips.insert(clip, at: 0)
+        }
     }
     
     func startGoService() {
         isLoading = true
         error = nil // Clear previous errors
         
-        // Clean up any existing process and timer
-        pollingTimer?.invalidate()
+        // Clean up any existing process
         goProcess?.terminate()
         
         goProcess = Process()
@@ -106,7 +123,7 @@ class AppState: ObservableObject {
                         print("Server started confirmation received")
                         DispatchQueue.main.async {
                             self?.isLoading = false
-                            self?.startPollingClips()
+                            self?.loadInitialClips()
                         }
                     }
                 }
@@ -139,9 +156,7 @@ class AppState: ObservableObject {
             // Check if process started
             if goProcess?.isRunning == true {
                 print("Server process launched, waiting for confirmation...")
-                
-                // Start polling to check server health
-                startPollingClips()
+                loadInitialClips()
             } else {
                 print("Server process failed to start")
                 throw NSError(domain: "", code: -1, 
@@ -155,10 +170,7 @@ class AppState: ObservableObject {
         }
     }
     
-    private func startPollingClips() {
-        pollingTimer?.invalidate() // Cancel any existing timer
-        
-        // Start health check sequence
+    private func loadInitialClips() {
         Task {
             do {
                 // Try to connect to health endpoint first
@@ -190,11 +202,12 @@ class AppState: ObservableObject {
                                 userInfo: [NSLocalizedDescriptionKey: "Server failed to start after multiple attempts"])
                 }
                 
-                // Server is healthy, start regular polling
+                // Load initial clips
+                let initialClips = try await apiClient.getClips()
                 await MainActor.run {
                     self.isLoading = false
                     self.error = nil
-                    self.startRegularPolling()
+                    self.clips = initialClips
                 }
             } catch {
                 await MainActor.run {
@@ -212,85 +225,7 @@ class AppState: ObservableObject {
             
             // Only retry if service is marked as running
             if self.isServiceRunning {
-                self.startPollingClips()
-            }
-        }
-    }
-    
-    private func startRegularPolling() {
-        pollingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            if self.isServiceRunning {
-                Task {
-                    do {
-                        await self.fetchClips()
-                    } catch {
-                        await MainActor.run {
-                            let nsError = error as NSError
-                            if nsError.domain == kCFURLErrorDomain && nsError.code == kCFURLErrorConnectionRefused {
-                                self.error = "Lost connection to server"
-                                self.retryConnection()
-                            } else {
-                                self.error = error.localizedDescription
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    private func fetchClips() {
-        Task {
-            do {
-                let newClips = try await apiClient.getClips()
-                await MainActor.run {
-                    self.error = nil  // Clear any previous errors on success
-                    self.clips = newClips
-                }
-            } catch {
-                let nsError = error as NSError
-                print("Network error in fetchClips: \(nsError.code) - \(nsError.localizedDescription)")
-                await MainActor.run {
-                    if nsError.domain == kCFURLErrorDomain {
-                        switch nsError.code {
-                        case kCFURLErrorConnectionRefused:
-                            self.error = "Server connection lost"
-                            self.retryConnection()
-                        case kCFURLErrorTimedOut:
-                            self.error = "Request timed out"
-                            self.retryConnection()
-                        case kCFURLErrorCannotConnectToHost:
-                            self.error = "Cannot connect to server"
-                            self.retryConnection()
-                        default:
-                            self.error = "Network error: \(error.localizedDescription)"
-                        }
-                    } else {
-                        self.error = error.localizedDescription
-                    }
-                }
-            } catch let error as APIError {
-                print("API error in fetchClips: \(error)")
-                await MainActor.run {
-                    switch error {
-                    case .invalidURL:
-                        self.error = "Invalid server URL"
-                    case .invalidResponse:
-                        self.error = "Invalid server response"
-                        self.retryConnection()
-                    case .networkError(let underlying):
-                        self.error = "Network error: \(underlying.localizedDescription)"
-                        self.retryConnection()
-                    case .decodingError(let decodingError):
-                        self.error = "Data error: \(decodingError.localizedDescription)"
-                    }
-                }
-            } catch {
-                print("Unexpected error in fetchClips: \(error)")
-                await MainActor.run {
-                    self.error = error.localizedDescription
-                }
+                self.loadInitialClips()
             }
         }
     }
@@ -348,8 +283,6 @@ class AppState: ObservableObject {
     }
     
     func cleanup() {
-        pollingTimer?.invalidate()
-        pollingTimer = nil
         goProcess?.terminate()
         goProcess = nil
         
@@ -399,4 +332,9 @@ struct ClipMetadata: Codable {
         case category = "Category"
         case tags = "Tags"
     }
+}
+
+struct WebSocketMessage: Codable {
+    let type: String
+    let payload: ClipboardItem?
 }

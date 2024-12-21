@@ -19,6 +19,7 @@ type Server struct {
 	srv         *http.Server
 	config      Config
 	pidFile     *pidFile
+	hub         *Hub
 }
 
 type Config struct {
@@ -31,11 +32,21 @@ func New(clipService *service.ClipboardService, config Config) (*Server, error) 
 		return nil, fmt.Errorf("failed to create PID file manager: %w", err)
 	}
 
-	return &Server{
+	hub := newHub()
+	go hub.run()
+
+	// Create server instance
+	server := &Server{
 		clipService: clipService,
 		config:      config,
 		pidFile:     pidFile,
-	}, nil
+		hub:         hub,
+	}
+
+	// Register the hub as a clipboard change handler
+	clipService.RegisterHandler(hub)
+
+	return server, nil
 }
 
 func (s *Server) Start() error {
@@ -71,6 +82,7 @@ func (s *Server) Start() error {
 
 	// Routes
 	r.Get("/status", s.handleStatus)
+	r.Get("/ws", s.serveWs) // WebSocket endpoint
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/clips", s.handleGetClips)
 		r.Get("/clips/{index}", s.handleGetClip)

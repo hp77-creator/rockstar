@@ -10,12 +10,18 @@ import (
 	"github.com/progrium/darwinkit/macos/appkit"
 )
 
+type pasteboardOp struct {
+	clip types.Clip
+	done chan error
+}
+
 type DarwinMonitor struct {
 	handler     func(types.Clip)
 	pasteboard  appkit.Pasteboard
 	changeCount int
 	mutex       sync.RWMutex
 	stopChan    chan struct{}
+	opChan      chan pasteboardOp
 }
 
 func init() {
@@ -24,13 +30,26 @@ func init() {
 }
 
 func NewMonitor() Monitor {
-	// Ensure we're on the main thread for AppKit operations
-	runtime.LockOSThread()
-
-	return &DarwinMonitor{
+	m := &DarwinMonitor{
 		pasteboard: appkit.Pasteboard_GeneralPasteboard(),
 		stopChan:   make(chan struct{}),
+		opChan:     make(chan pasteboardOp),
 	}
+
+	// Start a goroutine on the main thread to handle pasteboard operations
+	go func() {
+		runtime.LockOSThread()
+		for {
+			select {
+			case <-m.stopChan:
+				return
+			case op := <-m.opChan:
+				op.done <- m.setPasteboardContent(op.clip)
+			}
+		}
+	}()
+
+	return m
 }
 
 func (m *DarwinMonitor) Start() error {
@@ -65,12 +84,12 @@ func (m *DarwinMonitor) Stop() error {
 func (m *DarwinMonitor) GetPasteboardTypes() []string {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	
+
 	var types []string
 	for _, t := range m.pasteboard.Types() {
 		types = append(types, string(t))
 	}
-	
+
 	// Add some common types to check if they exist
 	commonTypes := []string{
 		"com.apple.pasteboard.promised-file-url",
@@ -81,13 +100,13 @@ func (m *DarwinMonitor) GetPasteboardTypes() []string {
 		"com.apple.pasteboard.creator",
 		"com.apple.cocoa.pasteboard.source-type",
 	}
-	
+
 	for _, t := range commonTypes {
 		if data := m.pasteboard.StringForType(appkit.PasteboardType(t)); data != "" {
 			types = append(types, t+" = "+data)
 		}
 	}
-	
+
 	return types
 }
 
@@ -97,11 +116,16 @@ func (m *DarwinMonitor) OnChange(handler func(types.Clip)) {
 	m.mutex.Unlock()
 }
 
-// SetContent sets the system clipboard content
-func (m *DarwinMonitor) SetContent(clip types.Clip) error {
+// setPasteboardContent performs the actual pasteboard operations on the main thread
+func (m *DarwinMonitor) setPasteboardContent(clip types.Clip) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
+	fmt.Printf("Debug: Setting pasteboard content - Type: %s, Content Length: %d\n", clip.Type, len(clip.Content))
+	
+	// Clear the pasteboard first
+	m.pasteboard.ClearContents()
+	
 	switch clip.Type {
 	case "text/plain":
 		m.pasteboard.SetStringForType(string(clip.Content), appkit.PasteboardType("public.utf8-plain-text"))
@@ -126,6 +150,7 @@ func (m *DarwinMonitor) SetContent(clip types.Clip) error {
 		// Try as plain text for unknown types
 		if plainText := string(clip.Content); plainText != "" {
 			m.pasteboard.SetStringForType(plainText, appkit.PasteboardType("public.utf8-plain-text"))
+			fmt.Printf("Debug: Set unknown type as plain text, length: %d\n", len(plainText))
 			return nil
 		}
 		return fmt.Errorf("unsupported content type: %s", clip.Type)
@@ -133,7 +158,18 @@ func (m *DarwinMonitor) SetContent(clip types.Clip) error {
 
 	// Update change count to prevent re-triggering the monitor
 	m.changeCount = m.pasteboard.ChangeCount()
+	fmt.Printf("Debug: Successfully set pasteboard content, new count: %d\n", m.changeCount)
 	return nil
+}
+
+// SetContent sets the system clipboard content by sending the operation to the main thread
+func (m *DarwinMonitor) SetContent(clip types.Clip) error {
+	done := make(chan error, 1)
+	m.opChan <- pasteboardOp{
+		clip: clip,
+		done: done,
+	}
+	return <-done
 }
 
 func (m *DarwinMonitor) checkForChanges() {
@@ -144,11 +180,11 @@ func (m *DarwinMonitor) checkForChanges() {
 
 	if currentCount != previousCount {
 		fmt.Printf("Debug: Clipboard change detected (count: %d -> %d)\n", previousCount, currentCount)
-		
+
 		// Get clipboard content
 		var clip types.Clip
 		clip.CreatedAt = time.Now()
-		
+
 		m.mutex.Lock()
 		m.changeCount = currentCount
 		m.mutex.Unlock()
@@ -169,7 +205,7 @@ func (m *DarwinMonitor) checkForChanges() {
 			if data := m.pasteboard.DataForType(appkit.PasteboardType("public.png")); len(data) > 0 {
 				clip.Content = data
 				clip.Type = "image/png"
-				
+
 				// Check if it's a screenshot by looking for screenshot-specific metadata
 				hasWindowID := false
 				for _, t := range m.pasteboard.Types() {
@@ -184,7 +220,7 @@ func (m *DarwinMonitor) checkForChanges() {
 						clip.Metadata.SourceApp = windowTitle
 					}
 				}
-				
+
 				handled = true
 			}
 		}
@@ -194,7 +230,7 @@ func (m *DarwinMonitor) checkForChanges() {
 			if data := m.pasteboard.DataForType(appkit.PasteboardType("public.tiff")); len(data) > 0 {
 				clip.Content = data
 				clip.Type = "image/tiff"
-				
+
 				// Similar screenshot check for TIFF
 				hasWindowID := false
 				for _, t := range m.pasteboard.Types() {
@@ -209,7 +245,7 @@ func (m *DarwinMonitor) checkForChanges() {
 						clip.Metadata.SourceApp = windowTitle
 					}
 				}
-				
+
 				handled = true
 			}
 		}
@@ -234,7 +270,7 @@ func (m *DarwinMonitor) checkForChanges() {
 				m.mutex.Lock()
 				val := m.pasteboard.StringForType(t)
 				m.mutex.Unlock()
-				
+
 				if val != "" {
 					fmt.Printf("  %s = %s\n", t, val)
 				} else {
@@ -258,7 +294,7 @@ func (m *DarwinMonitor) checkForChanges() {
 				m.mutex.Lock()
 				sourceApp := m.pasteboard.StringForType(appkit.PasteboardType("com.apple.pasteboard.app"))
 				m.mutex.Unlock()
-				
+
 				if sourceApp != "" {
 					clip.Metadata.SourceApp = sourceApp
 					fmt.Printf("Debug: Source from pasteboard metadata: %s\n", sourceApp)
@@ -266,7 +302,7 @@ func (m *DarwinMonitor) checkForChanges() {
 					m.mutex.Lock()
 					bundleID := m.pasteboard.StringForType(appkit.PasteboardType("com.apple.pasteboard.bundleid"))
 					m.mutex.Unlock()
-					
+
 					if bundleID != "" {
 						if apps := appkit.RunningApplication_RunningApplicationsWithBundleIdentifier(bundleID); len(apps) > 0 {
 							clip.Metadata.SourceApp = apps[0].LocalizedName()
@@ -276,7 +312,7 @@ func (m *DarwinMonitor) checkForChanges() {
 						// Only use frontmost app if it's not VS Code (which might just be our active editor)
 						if app.BundleIdentifier() != "com.microsoft.VSCode" {
 							clip.Metadata.SourceApp = app.LocalizedName()
-							fmt.Printf("Debug: Source from frontmost app: %s (%s)\n", 
+							fmt.Printf("Debug: Source from frontmost app: %s (%s)\n",
 								app.LocalizedName(), app.BundleIdentifier())
 						} else {
 							fmt.Printf("Debug: Ignoring VS Code as source\n")
@@ -284,7 +320,7 @@ func (m *DarwinMonitor) checkForChanges() {
 					}
 				}
 			}
-			
+
 			if clip.Metadata.SourceApp == "" {
 				fmt.Printf("Debug: Could not determine source application\n")
 			}

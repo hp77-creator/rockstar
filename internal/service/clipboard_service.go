@@ -12,11 +12,13 @@ import (
 
 // ClipboardService manages clipboard monitoring and storage
 type ClipboardService struct {
-	monitor clipboard.Monitor
-	store   storage.Storage
-	ctx     context.Context
-	cancel  context.CancelFunc
-	wg      sync.WaitGroup
+	monitor  clipboard.Monitor
+	store    storage.Storage
+	ctx      context.Context
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
+	handlers []ClipboardChangeHandler
+	mu       sync.RWMutex
 }
 
 // New creates a new ClipboardService
@@ -30,6 +32,13 @@ func New(monitor clipboard.Monitor, store storage.Storage) *ClipboardService {
 	}
 }
 
+// RegisterHandler adds a new clipboard change handler
+func (s *ClipboardService) RegisterHandler(handler ClipboardChangeHandler) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.handlers = append(s.handlers, handler)
+}
+
 // Start begins monitoring and storing clipboard changes
 func (s *ClipboardService) Start() error {
 	// Set up clipboard change handler
@@ -39,6 +48,16 @@ func (s *ClipboardService) Start() error {
 			defer s.wg.Done()
 			if err := s.handleClipboardChange(clip); err != nil {
 				log.Printf("Error handling clipboard change: %v", err)
+				return
+			}
+			
+			// Notify all registered handlers
+			s.mu.RLock()
+			handlers := s.handlers // Copy to avoid holding lock during callbacks
+			s.mu.RUnlock()
+			
+			for _, handler := range handlers {
+				handler.HandleClipboardChange(clip)
 			}
 		}()
 	})
@@ -77,38 +96,59 @@ func (s *ClipboardService) GetClips(ctx context.Context, limit, offset int) ([]*
 
 // GetClipByIndex returns the nth most recent clip (0 being the most recent)
 func (s *ClipboardService) GetClipByIndex(ctx context.Context, index int) (*types.Clip, error) {
+	log.Printf("Getting clip at index %d", index)
 	clips, err := s.store.List(ctx, storage.ListFilter{
 		Limit:  index + 1,
 		Offset: 0,
 	})
 	if err != nil {
+		log.Printf("Error getting clips: %v", err)
 		return nil, fmt.Errorf("failed to get clips: %w", err)
 	}
 
+	log.Printf("Found %d clips", len(clips))
 	if len(clips) <= index {
+		log.Printf("No clip found at index %d", index)
 		return nil, fmt.Errorf("no clip found at index %d", index)
 	}
 
-	return clips[index], nil
+	clip := clips[index]
+	log.Printf("Retrieved clip - Type: %s, Content Length: %d", clip.Type, len(clip.Content))
+	return clip, nil
 }
 
 // SetClipboard sets the system clipboard to the content of the specified clip
 func (s *ClipboardService) SetClipboard(ctx context.Context, clip *types.Clip) error {
 	if clip == nil {
+		log.Printf("Error: clip is nil")
 		return fmt.Errorf("clip cannot be nil")
 	}
 
-	return s.monitor.SetContent(*clip)
+	log.Printf("Setting clipboard - Type: %s, Content Length: %d", clip.Type, len(clip.Content))
+	if err := s.monitor.SetContent(*clip); err != nil {
+		log.Printf("Error setting clipboard content: %v", err)
+		return err
+	}
+	log.Printf("Successfully set clipboard content")
+	return nil
 }
 
 // PasteByIndex sets the clipboard to the nth most recent clip
 func (s *ClipboardService) PasteByIndex(ctx context.Context, index int) error {
+	log.Printf("Paste request for index %d", index)
 	clip, err := s.GetClipByIndex(ctx, index)
 	if err != nil {
+		log.Printf("Error getting clip at index %d: %v", index, err)
 		return err
 	}
 
-	return s.SetClipboard(ctx, clip)
+	log.Printf("Found clip at index %d - Type: %s, Content Length: %d", index, clip.Type, len(clip.Content))
+	if err := s.SetClipboard(ctx, clip); err != nil {
+		log.Printf("Error setting clipboard: %v", err)
+		return err
+	}
+	log.Printf("Successfully pasted clip at index %d", index)
+	return nil
 }
 
 // handleClipboardChange processes and stores clipboard content

@@ -7,11 +7,24 @@ enum APIError: Error {
     case decodingError(Error)
 }
 
-class APIClient {
+class APIClient: NSObject, URLSessionWebSocketDelegate {
     private let baseURL = "http://localhost:54321"
-    private let session: URLSession
+    private let wsURLs = [
+        "ws://localhost:54321/ws",
+        "ws://127.0.0.1:54321/ws"
+    ]
+    private var currentWSURLIndex = 0
+    private var session: URLSession!
+    private var webSocket: URLSessionWebSocketTask?
+    private var isConnected = false
+    private var reconnectTimer: Timer?
+    private var connectionAttempts = 0
+    private let maxConnectionAttempts = 3
+    weak var delegate: ClipboardUpdateDelegate?
     
-    init() {
+    override init() {
+        super.init()
+        
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 2 // Shorter timeout for faster failure detection
         config.timeoutIntervalForResource = 5
@@ -23,15 +36,160 @@ class APIClient {
             config.allowsConstrainedNetworkAccess = true
         }
         
-        self.session = URLSession(configuration: config)
+        self.session = URLSession(configuration: config, delegate: self, delegateQueue: .main)
         print("APIClient initialized with baseURL: \(baseURL)")
+        connectWebSocket()
     }
     
     deinit {
-        print("APIClient deinitializing, invalidating session")
+        print("APIClient deinitializing")
+        disconnectWebSocket()
         session.invalidateAndCancel()
     }
     
+    private func connectWebSocket() {
+        guard webSocket == nil else { return }
+        
+        // Reset connection attempts if we're trying a new URL
+        if currentWSURLIndex == 0 {
+            connectionAttempts = 0
+        }
+        
+        // Check if we've exceeded max attempts for all URLs
+        if connectionAttempts >= maxConnectionAttempts && currentWSURLIndex >= wsURLs.count - 1 {
+            print("Failed to connect after trying all URLs")
+            handleWebSocketError()
+            return
+        }
+        
+        // Get current URL to try
+        let wsURL = wsURLs[currentWSURLIndex]
+        guard let url = URL(string: wsURL) else {
+            print("Invalid WebSocket URL: \(wsURL)")
+            return
+        }
+        
+        print("Attempting WebSocket connection to \(wsURL) (Attempt \(connectionAttempts + 1))")
+        
+        webSocket = session.webSocketTask(with: url)
+        webSocket?.resume()
+        
+        receiveMessage()
+        connectionAttempts += 1
+    }
+    
+    private func disconnectWebSocket() {
+        webSocket?.cancel(with: .goingAway, reason: nil)
+        webSocket = nil
+        isConnected = false
+    }
+    
+    private func receiveMessage() {
+        webSocket?.receive { [weak self] result in
+            guard let self = self else { return }
+            
+            switch result {
+            case .success(let message):
+                switch message {
+                case .string(let text):
+                    self.handleWebSocketMessage(text)
+                case .data(let data):
+                    if let text = String(data: data, encoding: .utf8) {
+                        self.handleWebSocketMessage(text)
+                    }
+                @unknown default:
+                    break
+                }
+                // Continue receiving messages
+                self.receiveMessage()
+                
+            case .failure(let error):
+                print("WebSocket receive error: \(error)")
+                self.handleWebSocketError()
+            }
+        }
+    }
+    
+    private func handleWebSocketMessage(_ text: String) {
+        guard let data = text.data(using: .utf8) else { return }
+        
+        do {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .custom { decoder in
+                let container = try decoder.singleValueContainer()
+                let dateString = try container.decode(String.self)
+                
+                let formats = [
+                    "yyyy-MM-dd'T'HH:mm:ss.SSSZ",
+                    "yyyy-MM-dd'T'HH:mm:ssZ",
+                    "yyyy-MM-dd'T'HH:mm:ss'Z'"
+                ]
+                
+                let formatter = DateFormatter()
+                formatter.locale = Locale(identifier: "en_US_POSIX")
+                
+                for format in formats {
+                    formatter.dateFormat = format
+                    if let date = formatter.date(from: dateString) {
+                        return date
+                    }
+                }
+                
+                print("Failed to parse date: \(dateString)")
+                throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid date format")
+            }
+            
+            let message = try decoder.decode(WebSocketMessage.self, from: data)
+            if message.type == "clipboard_change" {
+                if let clip = message.payload {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.delegate?.didReceiveNewClip(clip)
+                    }
+                }
+            }
+        } catch {
+            print("Error decoding WebSocket message: \(error)")
+        }
+    }
+    
+    private func handleWebSocketError() {
+        disconnectWebSocket()
+        
+        // Try next URL if available
+        if currentWSURLIndex < wsURLs.count - 1 {
+            currentWSURLIndex += 1
+            print("Switching to next WebSocket URL: \(wsURLs[currentWSURLIndex])")
+            connectWebSocket()
+            return
+        }
+        
+        // Reset to first URL for next attempt
+        currentWSURLIndex = 0
+        
+        // Schedule reconnection with exponential backoff
+        let backoffTime = min(pow(2.0, Double(connectionAttempts)), 30.0)
+        print("Scheduling reconnection in \(backoffTime) seconds")
+        
+        reconnectTimer?.invalidate()
+        reconnectTimer = Timer.scheduledTimer(withTimeInterval: backoffTime, repeats: false) { [weak self] _ in
+            self?.connectWebSocket()
+        }
+    }
+    
+    // URLSessionWebSocketDelegate methods
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
+        print("WebSocket connected successfully to \(wsURLs[currentWSURLIndex])")
+        isConnected = true
+        connectionAttempts = 0  // Reset attempts on successful connection
+    }
+    
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+        print("WebSocket closed with code: \(closeCode)")
+        isConnected = false
+        handleWebSocketError()
+    }
+    
+    // Keep the HTTP methods for initial load and manual refresh
     func getClips() async throws -> [ClipboardItem] {
         guard let url = URL(string: "\(baseURL)/api/clips") else {
             throw APIError.invalidURL

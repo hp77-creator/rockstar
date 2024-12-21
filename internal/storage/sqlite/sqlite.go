@@ -176,8 +176,8 @@ func (s *SQLiteStorage) List(ctx context.Context, filter storage.ListFilter) ([]
 		query = query.Offset(filter.Offset)
 	}
 
-	// Order by last used time
-	query = query.Order("last_used DESC")
+	// Order by creation time to maintain stable order
+	query = query.Order("created_at DESC")
 
 	var models []storage.ClipModel
 	if err := query.Find(&models).Error; err != nil {
@@ -186,6 +186,15 @@ func (s *SQLiteStorage) List(ctx context.Context, filter storage.ListFilter) ([]
 
 	clips := make([]*types.Clip, len(models))
 	for i, model := range models {
+		// Load external content if needed
+		if model.IsExternal {
+			path := filepath.Join(s.fsPath, model.StoragePath)
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read external content for clip %d: %w", model.ID, err)
+			}
+			model.Content = content
+		}
 		clips[i] = model.ToClip()
 	}
 
