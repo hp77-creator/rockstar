@@ -6,59 +6,34 @@ struct ClipboardManagerApp: App {
     // Keep strong reference to NSApplication and coordinator
     private let app = NSApplication.shared
     @StateObject private var appState = AppState()
+    @StateObject private var hotKeyManager = HotKeyManager.shared
+    @State private var showingSettings = false
     
     // Use a class-based coordinator to handle lifecycle
     private class AppCoordinator {
-        let hotKeyManager = HotKeyManager.shared
         private var observers: [NSObjectProtocol] = []
-        private var accessibilityCheckTimer: Timer?
         
         deinit {
             observers.forEach { NotificationCenter.default.removeObserver($0) }
-            accessibilityCheckTimer?.invalidate()
         }
         
-        func setup(appState: AppState) {
-            // Initial accessibility check
-            checkAndHandleAccessibility(appState: appState)
-            
-            // Set up periodic accessibility check
-            accessibilityCheckTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-                self?.checkAndHandleAccessibility(appState: appState)
-            }
-            
+        func setup(appState: AppState, hotKeyManager: HotKeyManager) {
             // Set up termination notification observer
             let terminationObserver = NotificationCenter.default.addObserver(
                 forName: NSApplication.willTerminateNotification,
                 object: nil,
                 queue: .main
-            ) { [weak self, weak appState] _ in
+            ) { [weak appState] _ in
                 print("Application will terminate, cleaning up...")
-                self?.hotKeyManager.unregister()
+                hotKeyManager.unregister()
                 appState?.cleanup()
             }
             
             // Store observers for cleanup
             observers.append(terminationObserver)
-        }
-        
-        private func checkAndHandleAccessibility(appState: AppState) {
-            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
-            let trusted = AXIsProcessTrustedWithOptions(options as CFDictionary)
             
-            if trusted {
-                // Only register if not already registered
-                if !hotKeyManager.isRegistered {
-                    print("Registering hotkey after accessibility granted")
-                    hotKeyManager.register(appState: appState)
-                }
-            } else {
-                // Unregister if permissions were revoked
-                if hotKeyManager.isRegistered {
-                    print("Unregistering hotkey after accessibility revoked")
-                    hotKeyManager.unregister()
-                }
-            }
+            // Initial registration attempt
+            hotKeyManager.register(appState: appState)
         }
     }
     
@@ -66,17 +41,13 @@ struct ClipboardManagerApp: App {
     
     init() {
         print("ClipboardManagerApp initializing...")
-        coordinator.setup(appState: appState)
+        coordinator.setup(appState: appState, hotKeyManager: HotKeyManager.shared)
     }
     
     var body: some Scene {
         MenuBarExtra("Clipboard Manager", systemImage: "clipboard") {
             VStack(spacing: 8) {
-                // Check accessibility status
-                let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: false]
-                let trusted = AXIsProcessTrustedWithOptions(options as CFDictionary)
-                
-                if !trusted {
+                if !hotKeyManager.hasAccessibilityPermissions {
                     VStack(spacing: 8) {
                         Image(systemName: "keyboard")
                             .font(.largeTitle)
@@ -91,11 +62,19 @@ struct ClipboardManagerApp: App {
                             .multilineTextAlignment(.center)
                         
                         Button("Open System Settings") {
-                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                                NSWorkspace.shared.open(url)
+                            }
                         }
                         .buttonStyle(.borderedProminent)
                         
-                        Text("Look for 'Clipboard Manager' in\nPrivacy & Security > Accessibility")
+                        Button("Force Permission Check") {
+                            hotKeyManager.forcePermissionCheck()
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundColor(.blue)
+                        
+                        Text("Look for 'ClipboardManager' in\nPrivacy & Security > Accessibility")
                             .font(.caption2)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
@@ -111,9 +90,17 @@ struct ClipboardManagerApp: App {
                         .font(.caption)
                         .foregroundColor(.secondary)
                     
-                    Text("Accessibility: \(trusted ? "✅" : "❌")")
+                    Text("Accessibility: \(hotKeyManager.hasAccessibilityPermissions ? "✅" : "❌")")
                         .font(.caption)
-                        .foregroundColor(trusted ? .green : .red)
+                        .foregroundColor(hotKeyManager.hasAccessibilityPermissions ? .green : .red)
+                    
+                    Text("HotKey: \(hotKeyManager.isRegistered ? "✅" : "❌")")
+                        .font(.caption)
+                        .foregroundColor(hotKeyManager.isRegistered ? .green : .red)
+                    
+                    Text("Bundle ID: \(Bundle.main.bundleIdentifier ?? "unknown")")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
                 .padding(.vertical, 4)
                 
@@ -153,6 +140,20 @@ struct ClipboardManagerApp: App {
                 
                 ClipboardHistoryView()
                     .environmentObject(appState)
+                
+                Divider()
+                
+                Button(action: {
+                    NSApp.activate(ignoringOtherApps: true)
+                    SettingsWindowController.showSettings()
+                }) {
+                    HStack {
+                        Image(systemName: "gear")
+                        Text("Settings")
+                    }
+                }
+                .buttonStyle(.borderless)
+                .foregroundColor(.secondary)
                 
                 Divider()
                 

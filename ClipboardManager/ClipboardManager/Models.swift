@@ -3,8 +3,12 @@ import SwiftUI
 import AppKit
 import Carbon.HIToolbox
 
-// URL Error constants
+// Constants
 private let kCFURLErrorDomain = "NSURLErrorDomain"
+enum UserDefaultsKeys {
+    static let maxClipsShown = "maxClipsShown"
+}
+
 private let kCFURLErrorConnectionRefused = 61
 private let kCFURLErrorTimedOut = -1001
 private let kCFURLErrorCannotConnectToHost = -1004
@@ -16,6 +20,12 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
     @Published var error: String?
     @Published var isServiceRunning = false
     @Published var isLoading = false
+    
+    #if DEBUG
+    @Published var isDebugMode = true
+    #else
+    @Published var isDebugMode = false
+    #endif
     
     init() {
         // Initialize properties before using them
@@ -85,6 +95,9 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
             env["CLIPBOARD_DB_PATH"] = dbPath
             env["CLIPBOARD_FS_PATH"] = fsPath
             env["CLIPBOARD_API_PORT"] = "54321"
+            #if DEBUG
+            env["CLIPBOARD_DEBUG"] = "true"
+            #endif
             
             // Ensure PATH includes common locations
             let defaultPath = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -233,55 +246,57 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
         }
     }
     
-    func pasteClip(at index: Int) {
-        Task {
-            do {
-                try await apiClient.pasteClip(at: index)
-                await MainActor.run {
-                    self.error = nil  // Clear any previous errors on success
-                }
-            } catch {
-                let nsError = error as NSError
-                print("Network error in pasteClip: \(nsError.code) - \(nsError.localizedDescription)")
-                await MainActor.run {
-                    if nsError.domain == kCFURLErrorDomain {
-                        switch nsError.code {
-                        case kCFURLErrorConnectionRefused:
-                            self.error = "Server connection lost"
-                            self.retryConnection()
-                        case kCFURLErrorTimedOut:
-                            self.error = "Paste request timed out"
-                        case kCFURLErrorCannotConnectToHost:
-                            self.error = "Cannot connect to server"
-                            self.retryConnection()
-                        default:
-                            self.error = "Network error: \(error.localizedDescription)"
-                        }
-                    } else {
-                        self.error = error.localizedDescription
-                    }
-                }
-            } catch let error as APIError {
-                print("API error in pasteClip: \(error)")
-                await MainActor.run {
-                    switch error {
-                    case .invalidURL:
-                        self.error = "Invalid server URL"
-                    case .invalidResponse:
-                        self.error = "Invalid server response"
-                    case .networkError(let underlying):
-                        self.error = "Network error: \(underlying.localizedDescription)"
+    @discardableResult
+    func pasteClip(at index: Int) async throws {
+        do {
+            try await apiClient.pasteClip(at: index)
+            await MainActor.run {
+                self.error = nil  // Clear any previous errors on success
+            }
+        } catch {
+            let nsError = error as NSError
+            print("Network error in pasteClip: \(nsError.code) - \(nsError.localizedDescription)")
+            await MainActor.run {
+                if nsError.domain == kCFURLErrorDomain {
+                    switch nsError.code {
+                    case kCFURLErrorConnectionRefused:
+                        self.error = "Server connection lost"
                         self.retryConnection()
-                    case .decodingError(let decodingError):
-                        self.error = "Data error: \(decodingError.localizedDescription)"
+                    case kCFURLErrorTimedOut:
+                        self.error = "Paste request timed out"
+                    case kCFURLErrorCannotConnectToHost:
+                        self.error = "Cannot connect to server"
+                        self.retryConnection()
+                    default:
+                        self.error = "Network error: \(error.localizedDescription)"
                     }
-                }
-            } catch {
-                print("Unexpected error in pasteClip: \(error)")
-                await MainActor.run {
+                } else {
                     self.error = error.localizedDescription
                 }
             }
+            throw error
+        } catch let error as APIError {
+            print("API error in pasteClip: \(error)")
+            await MainActor.run {
+                switch error {
+                case .invalidURL:
+                    self.error = "Invalid server URL"
+                case .invalidResponse:
+                    self.error = "Invalid server response"
+                case .networkError(let underlying):
+                    self.error = "Network error: \(underlying.localizedDescription)"
+                    self.retryConnection()
+                case .decodingError(let decodingError):
+                    self.error = "Data error: \(decodingError.localizedDescription)"
+                }
+            }
+            throw error
+        } catch {
+            print("Unexpected error in pasteClip: \(error)")
+            await MainActor.run {
+                self.error = error.localizedDescription
+            }
+            throw error
         }
     }
     

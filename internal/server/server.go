@@ -197,14 +197,28 @@ func (s *Server) handleGetClip(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePasteClip(w http.ResponseWriter, r *http.Request) {
 	index, err := strconv.Atoi(chi.URLParam(r, "index"))
 	if err != nil {
+		log.Printf("Invalid index parameter: %v", err)
 		http.Error(w, "invalid index", http.StatusBadRequest)
 		return
 	}
 
+	log.Printf("Handling paste request for index: %d", index)
+	
 	if err := s.clipService.PasteByIndex(r.Context(), index); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("Error pasting clip at index %d: %v", index, err)
+		
+		// Create a detailed error response
+		errorResponse := map[string]string{
+			"error": err.Error(),
+			"detail": fmt.Sprintf("Failed to paste clip at index %d", index),
+		}
+		
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(errorResponse)
 		return
 	}
 
+	log.Printf("Successfully pasted clip at index %d", index)
 	w.WriteHeader(http.StatusOK)
 }

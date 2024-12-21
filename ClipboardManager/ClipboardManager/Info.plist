@@ -13,9 +13,9 @@
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Clipboard Manager</string>
+    <string>ClipboardManager</string>
     <key>CFBundleDisplayName</key>
-    <string>Clipboard Manager</string>
+    <string>ClipboardManager</string>
     <key>CFBundlePackageType</key>
     <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
     <key>CFBundleShortVersionString</key>
@@ -37,7 +37,7 @@
     <key>NSPasteboardUsageDescription</key>
     <string>This app needs to access clipboard data</string>
     <key>NSAccessibilityUsageDescription</key>
-    <string>This app needs accessibility access to detect keyboard shortcuts</string>
+    <string>This app needs accessibility access to detect keyboard shortcuts (Cmd+Shift+V)</string>
     <key>NSLocalNetworkUsageDescription</key>
     <string>This app needs to communicate with the local clipboard service</string>
     <key>NSBonjourServices</key>
@@ -49,5 +49,13 @@
         <key>NSAllowsLocalNetworking</key>
         <true/>
     </dict>
+    <key>NSAppleEventsEnabled</key>
+    <true/>
+    <key>NSSystemAdministrationUsageDescription</key>
+    <string>This app needs accessibility permissions to detect keyboard shortcuts</string>
+    <key>NSRequiresAquaSystemAppearance</key>
+    <false/>
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
 </dict>
 </plist>

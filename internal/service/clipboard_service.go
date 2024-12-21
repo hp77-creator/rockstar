@@ -10,6 +10,25 @@ import (
 	"sync"
 )
 
+// Custom error types for better error handling
+type ClipboardError struct {
+	Op      string // Operation that failed
+	Index   int    // Index involved (if applicable)
+	Message string // Error message
+	Err     error  // Underlying error
+}
+
+func (e *ClipboardError) Error() string {
+	if e.Index >= 0 {
+		return fmt.Sprintf("%s failed for index %d: %s", e.Op, e.Index, e.Message)
+	}
+	return fmt.Sprintf("%s failed: %s", e.Op, e.Message)
+}
+
+func (e *ClipboardError) Unwrap() error {
+	return e.Err
+}
+
 // ClipboardService manages clipboard monitoring and storage
 type ClipboardService struct {
 	monitor  clipboard.Monitor
@@ -64,7 +83,12 @@ func (s *ClipboardService) Start() error {
 
 	// Start the monitor
 	if err := s.monitor.Start(); err != nil {
-		return fmt.Errorf("failed to start clipboard monitor: %w", err)
+		return &ClipboardError{
+			Op:      "Start",
+			Index:   -1,
+			Message: "failed to start clipboard monitor",
+			Err:     err,
+		}
 	}
 
 	return nil
@@ -77,7 +101,12 @@ func (s *ClipboardService) Stop() error {
 
 	// Stop the monitor
 	if err := s.monitor.Stop(); err != nil {
-		return fmt.Errorf("failed to stop clipboard monitor: %w", err)
+		return &ClipboardError{
+			Op:      "Stop",
+			Index:   -1,
+			Message: "failed to stop clipboard monitor",
+			Err:     err,
+		}
 	}
 
 	// Wait for ongoing operations to complete
@@ -88,10 +117,19 @@ func (s *ClipboardService) Stop() error {
 
 // GetClips returns a paginated list of clips
 func (s *ClipboardService) GetClips(ctx context.Context, limit, offset int) ([]*types.Clip, error) {
-	return s.store.List(ctx, storage.ListFilter{
+	clips, err := s.store.List(ctx, storage.ListFilter{
 		Limit:  limit,
 		Offset: offset,
 	})
+	if err != nil {
+		return nil, &ClipboardError{
+			Op:      "GetClips",
+			Index:   -1,
+			Message: "failed to list clips",
+			Err:     err,
+		}
+	}
+	return clips, nil
 }
 
 // GetClipByIndex returns the nth most recent clip (0 being the most recent)
@@ -103,13 +141,23 @@ func (s *ClipboardService) GetClipByIndex(ctx context.Context, index int) (*type
 	})
 	if err != nil {
 		log.Printf("Error getting clips: %v", err)
-		return nil, fmt.Errorf("failed to get clips: %w", err)
+		return nil, &ClipboardError{
+			Op:      "GetClipByIndex",
+			Index:   index,
+			Message: "failed to retrieve clips",
+			Err:     err,
+		}
 	}
 
 	log.Printf("Found %d clips", len(clips))
 	if len(clips) <= index {
 		log.Printf("No clip found at index %d", index)
-		return nil, fmt.Errorf("no clip found at index %d", index)
+		return nil, &ClipboardError{
+			Op:      "GetClipByIndex",
+			Index:   index,
+			Message: "clip not found",
+			Err:     nil,
+		}
 	}
 
 	clip := clips[index]
@@ -121,13 +169,23 @@ func (s *ClipboardService) GetClipByIndex(ctx context.Context, index int) (*type
 func (s *ClipboardService) SetClipboard(ctx context.Context, clip *types.Clip) error {
 	if clip == nil {
 		log.Printf("Error: clip is nil")
-		return fmt.Errorf("clip cannot be nil")
+		return &ClipboardError{
+			Op:      "SetClipboard",
+			Index:   -1,
+			Message: "clip cannot be nil",
+			Err:     nil,
+		}
 	}
 
 	log.Printf("Setting clipboard - Type: %s, Content Length: %d", clip.Type, len(clip.Content))
 	if err := s.monitor.SetContent(*clip); err != nil {
 		log.Printf("Error setting clipboard content: %v", err)
-		return err
+		return &ClipboardError{
+			Op:      "SetClipboard",
+			Index:   -1,
+			Message: "failed to set clipboard content",
+			Err:     err,
+		}
 	}
 	log.Printf("Successfully set clipboard content")
 	return nil
@@ -139,13 +197,23 @@ func (s *ClipboardService) PasteByIndex(ctx context.Context, index int) error {
 	clip, err := s.GetClipByIndex(ctx, index)
 	if err != nil {
 		log.Printf("Error getting clip at index %d: %v", index, err)
-		return err
+		return &ClipboardError{
+			Op:      "PasteByIndex",
+			Index:   index,
+			Message: "failed to retrieve clip",
+			Err:     err,
+		}
 	}
 
 	log.Printf("Found clip at index %d - Type: %s, Content Length: %d", index, clip.Type, len(clip.Content))
 	if err := s.SetClipboard(ctx, clip); err != nil {
 		log.Printf("Error setting clipboard: %v", err)
-		return err
+		return &ClipboardError{
+			Op:      "PasteByIndex",
+			Index:   index,
+			Message: "failed to set clipboard content",
+			Err:     err,
+		}
 	}
 	log.Printf("Successfully pasted clip at index %d", index)
 	return nil
@@ -164,7 +232,12 @@ func (s *ClipboardService) handleClipboardChange(clip types.Clip) error {
 		log.Printf("Content too large to store (size: %d bytes)", len(clip.Content))
 		return nil
 	} else if err != nil {
-		return fmt.Errorf("failed to store clip: %w", err)
+		return &ClipboardError{
+			Op:      "handleClipboardChange",
+			Index:   -1,
+			Message: "failed to store clip",
+			Err:     err,
+		}
 	}
 
 	log.Printf("Stored new clipboard content (type: %s, source: %s)", 

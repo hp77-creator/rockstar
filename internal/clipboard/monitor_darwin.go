@@ -3,12 +3,19 @@ package clipboard
 import (
 	"clipboard-manager/pkg/types"
 	"fmt"
+	"os"
 	"runtime"
 	"sync"
 	"time"
 
 	"github.com/progrium/darwinkit/macos/appkit"
 )
+
+func debugLog(format string, args ...interface{}) {
+	if os.Getenv("CLIPBOARD_DEBUG") != "" {
+		fmt.Printf(format, args...)
+	}
+}
 
 type pasteboardOp struct {
 	clip types.Clip
@@ -59,7 +66,7 @@ func (m *DarwinMonitor) Start() error {
 	m.mutex.Unlock()
 
 	go func() {
-		ticker := time.NewTicker(500 * time.Millisecond)
+		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
 
 		for {
@@ -121,7 +128,7 @@ func (m *DarwinMonitor) setPasteboardContent(clip types.Clip) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	fmt.Printf("Debug: Setting pasteboard content - Type: %s, Content Length: %d\n", clip.Type, len(clip.Content))
+	debugLog("Debug: Setting pasteboard content - Type: %s, Content Length: %d\n", clip.Type, len(clip.Content))
 	
 	// Clear the pasteboard first
 	m.pasteboard.ClearContents()
@@ -150,7 +157,7 @@ func (m *DarwinMonitor) setPasteboardContent(clip types.Clip) error {
 		// Try as plain text for unknown types
 		if plainText := string(clip.Content); plainText != "" {
 			m.pasteboard.SetStringForType(plainText, appkit.PasteboardType("public.utf8-plain-text"))
-			fmt.Printf("Debug: Set unknown type as plain text, length: %d\n", len(plainText))
+			debugLog("Debug: Set unknown type as plain text, length: %d\n", len(plainText))
 			return nil
 		}
 		return fmt.Errorf("unsupported content type: %s", clip.Type)
@@ -158,7 +165,8 @@ func (m *DarwinMonitor) setPasteboardContent(clip types.Clip) error {
 
 	// Update change count to prevent re-triggering the monitor
 	m.changeCount = m.pasteboard.ChangeCount()
-	fmt.Printf("Debug: Successfully set pasteboard content, new count: %d\n", m.changeCount)
+	debugLog("Debug: Successfully set pasteboard content, new count: %d\n", m.changeCount)
+	debugLog("Debug: Content set to clipboard - ready for manual paste\n")
 	return nil
 }
 
@@ -179,7 +187,7 @@ func (m *DarwinMonitor) checkForChanges() {
 	m.mutex.Unlock()
 
 	if currentCount != previousCount {
-		fmt.Printf("Debug: Clipboard change detected (count: %d -> %d)\n", previousCount, currentCount)
+		debugLog("Debug: Clipboard change detected (count: %d -> %d)\n", previousCount, currentCount)
 
 		// Get clipboard content
 		var clip types.Clip
@@ -265,16 +273,18 @@ func (m *DarwinMonitor) checkForChanges() {
 			m.mutex.Unlock()
 
 			// Debug: Print all pasteboard types
-			fmt.Println("Debug: Available pasteboard types:")
-			for _, t := range types {
-				m.mutex.Lock()
-				val := m.pasteboard.StringForType(t)
-				m.mutex.Unlock()
+			if os.Getenv("CLIPBOARD_DEBUG") != "" {
+				debugLog("Debug: Available pasteboard types:\n")
+				for _, t := range types {
+					m.mutex.Lock()
+					val := m.pasteboard.StringForType(t)
+					m.mutex.Unlock()
 
-				if val != "" {
-					fmt.Printf("  %s = %s\n", t, val)
-				} else {
-					fmt.Printf("  %s (no string value)\n", t)
+					if val != "" {
+						debugLog("  %s = %s\n", t, val)
+					} else {
+						debugLog("  %s (no string value)\n", t)
+					}
 				}
 			}
 
@@ -287,7 +297,7 @@ func (m *DarwinMonitor) checkForChanges() {
 				// Content is from a web browser
 				if sourceURL != "" {
 					clip.Metadata.SourceApp = "Chrome"
-					fmt.Printf("Debug: Source from Chrome URL: %s\n", sourceURL)
+					debugLog("Debug: Source from Chrome URL: %s\n", sourceURL)
 				}
 			} else {
 				// Try other methods
@@ -297,7 +307,7 @@ func (m *DarwinMonitor) checkForChanges() {
 
 				if sourceApp != "" {
 					clip.Metadata.SourceApp = sourceApp
-					fmt.Printf("Debug: Source from pasteboard metadata: %s\n", sourceApp)
+					debugLog("Debug: Source from pasteboard metadata: %s\n", sourceApp)
 				} else {
 					m.mutex.Lock()
 					bundleID := m.pasteboard.StringForType(appkit.PasteboardType("com.apple.pasteboard.bundleid"))
@@ -306,23 +316,23 @@ func (m *DarwinMonitor) checkForChanges() {
 					if bundleID != "" {
 						if apps := appkit.RunningApplication_RunningApplicationsWithBundleIdentifier(bundleID); len(apps) > 0 {
 							clip.Metadata.SourceApp = apps[0].LocalizedName()
-							fmt.Printf("Debug: Source from bundle ID: %s (%s)\n", apps[0].LocalizedName(), bundleID)
+							debugLog("Debug: Source from bundle ID: %s (%s)\n", apps[0].LocalizedName(), bundleID)
 						}
 					} else if app := appkit.Workspace_SharedWorkspace().FrontmostApplication(); app.LocalizedName() != "" {
 						// Only use frontmost app if it's not VS Code (which might just be our active editor)
 						if app.BundleIdentifier() != "com.microsoft.VSCode" {
 							clip.Metadata.SourceApp = app.LocalizedName()
-							fmt.Printf("Debug: Source from frontmost app: %s (%s)\n",
+							debugLog("Debug: Source from frontmost app: %s (%s)\n",
 								app.LocalizedName(), app.BundleIdentifier())
 						} else {
-							fmt.Printf("Debug: Ignoring VS Code as source\n")
+							debugLog("Debug: Ignoring VS Code as source\n")
 						}
 					}
 				}
 			}
 
 			if clip.Metadata.SourceApp == "" {
-				fmt.Printf("Debug: Could not determine source application\n")
+				debugLog("Debug: Could not determine source application\n")
 			}
 
 			if m.handler != nil {

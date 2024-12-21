@@ -176,8 +176,8 @@ func (s *SQLiteStorage) List(ctx context.Context, filter storage.ListFilter) ([]
 		query = query.Offset(filter.Offset)
 	}
 
-	// Order by creation time to maintain stable order
-	query = query.Order("created_at DESC")
+	// Order by last used time to show most recent clips first
+	query = query.Order("last_used DESC")
 
 	var models []storage.ClipModel
 	if err := query.Find(&models).Error; err != nil {

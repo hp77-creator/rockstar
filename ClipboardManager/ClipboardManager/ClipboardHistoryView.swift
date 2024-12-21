@@ -1,6 +1,8 @@
 import SwiftUI
+import UserNotifications
 
 struct ClipboardHistoryView: View {
+    @State private var showToast = false
     @EnvironmentObject private var appState: AppState
     var isInPanel: Bool = false
     @Environment(\.dismiss) private var dismiss
@@ -13,23 +15,25 @@ struct ClipboardHistoryView: View {
     
     var body: some View {
         VStack(spacing: 8) {
-            if !isInPanel {
-                // Status indicator (only in menu bar)
-                HStack {
-                    Circle()
-                        .fill(appState.isServiceRunning ? Color.green : Color.red)
-                        .frame(width: 8, height: 8)
-                    Text(appState.isServiceRunning ? "Service Running" : "Service Stopped")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+            if appState.isDebugMode {
+                if !isInPanel {
+                    // Status indicator (only in menu bar)
+                    HStack {
+                        Circle()
+                            .fill(appState.isServiceRunning ? Color.green : Color.red)
+                            .frame(width: 8, height: 8)
+                        Text(appState.isServiceRunning ? "Service Running" : "Service Stopped")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
-            }
-            
-            if let error = appState.error {
-                Text("Error: \(error)")
-                    .foregroundColor(.red)
-                    .padding()
-                    .multilineTextAlignment(.center)
+                
+                if let error = appState.error {
+                    Text("Error: \(error)")
+                        .foregroundColor(.red)
+                        .padding()
+                        .multilineTextAlignment(.center)
+                }
             }
             
             Group {
@@ -66,11 +70,20 @@ struct ClipboardHistoryView: View {
                 } else {
                     List(Array(appState.clips.enumerated()), id: \.element.id) { index, clip in
                         ClipboardItemView(item: clip, isSelected: index == selectedIndex) {
-                            appState.pasteClip(at: index)
+                            try await appState.pasteClip(at: index)
                             if isInPanel {
                                 PanelWindowManager.hidePanel()
                             }
+                            // Show visual feedback that content is ready to paste
+                            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .default)
+                            if appState.isDebugMode {
+                                showToast = true
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                    showToast = false
+                                }
+                            }
                         }
+                        .help(appState.isDebugMode ? "Click to copy, then use Cmd+V to paste" : "")
                         .listRowBackground(index == selectedIndex ? Color.blue.opacity(0.2) : Color.clear)
                     }
                     .frame(width: 300, height: isInPanel ? 300 : 400)
@@ -79,16 +92,34 @@ struct ClipboardHistoryView: View {
             }
         }
         .padding()
+        .overlay(
+            Group {
+                if appState.isDebugMode && showToast {
+                    VStack {
+                        Spacer()
+                        Text("Content copied! Press Cmd+V to paste")
+                            .foregroundColor(.white)
+                            .padding()
+                            .background(Color.black.opacity(0.75))
+                            .cornerRadius(10)
+                            .padding(.bottom)
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .animation(.easeInOut, value: showToast)
+                }
+            }
+        )
     }
 }
 
 struct ClipboardItemView: View {
     let item: ClipboardItem
     let isSelected: Bool
-    let onPaste: () -> Void
+    let onPaste: () async throws -> Void
     
     @State private var isHovered = false
     @State private var isPasting = false
+    @State private var error: Error?
     
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -143,9 +174,23 @@ struct ClipboardItemView: View {
         .onTapGesture {
             Task {
                 isPasting = true
-                onPaste()
+                do {
+                    try await onPaste()
+                } catch {
+                    print("Failed to paste clip: \(error)")
+                    self.error = error
+                }
                 try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
                 isPasting = false
+            }
+        }
+        .alert("Error", isPresented: .constant(error != nil)) {
+            Button("OK") {
+                error = nil
+            }
+        } message: {
+            if let error = error {
+                Text(error.localizedDescription)
             }
         }
     }

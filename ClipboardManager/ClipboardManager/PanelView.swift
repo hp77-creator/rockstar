@@ -35,9 +35,20 @@ struct PanelView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.colorScheme) private var colorScheme
     @State private var selectedIndex = 0
+    @State private var showingSettings = false
     
     var body: some View {
         VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Button(action: { showingSettings.toggle() }) {
+                    Image(systemName: "gear")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 8)
+                .padding(.top, 8)
+            }
             ClipboardHistoryView(isInPanel: true, selectedIndex: $selectedIndex)
                 .environmentObject(appState)
         }
@@ -63,8 +74,14 @@ struct PanelView: View {
                     return nil
                 case 36, 76: // Return key or numpad enter
                     if !appState.clips.isEmpty {
-                        appState.pasteClip(at: selectedIndex)
-                        PanelWindowManager.hidePanel()
+                        Task {
+                            do {
+                                try await appState.pasteClip(at: selectedIndex)
+                                PanelWindowManager.hidePanel()
+                            } catch {
+                                print("Failed to paste clip: \(error)")
+                            }
+                        }
                     }
                     return nil
                 case 53: // Escape key

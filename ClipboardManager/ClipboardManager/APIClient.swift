@@ -191,7 +191,15 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
     
     // Keep the HTTP methods for initial load and manual refresh
     func getClips() async throws -> [ClipboardItem] {
-        guard let url = URL(string: "\(baseURL)/api/clips") else {
+        // Get the user's configured limit from UserDefaults
+        let limit = UserDefaults.standard.integer(forKey: UserDefaultsKeys.maxClipsShown)
+        let effectiveLimit = limit > 0 ? limit : 10 // fallback to 10 if not set
+        
+        // Construct URL with limit parameter
+        var urlComponents = URLComponents(string: "\(baseURL)/api/clips")
+        urlComponents?.queryItems = [URLQueryItem(name: "limit", value: String(effectiveLimit))]
+        
+        guard let url = urlComponents?.url else {
             throw APIError.invalidURL
         }
         
@@ -297,9 +305,22 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
             }
             
             guard httpResponse.statusCode == 200 else {
-                let errorMessage = String(data: data, encoding: .utf8) ?? "No error message"
-                print("Server error: HTTP \(httpResponse.statusCode), \(errorMessage)")
-                throw APIError.invalidResponse
+                // Try to decode detailed error response
+                if let errorData = try? JSONDecoder().decode([String: String].self, from: data) {
+                    let errorMessage = errorData["error"] ?? errorData["detail"] ?? "Unknown error"
+                    print("Server error: HTTP \(httpResponse.statusCode), \(errorMessage)")
+                    throw APIError.networkError(NSError(domain: "ClipboardManager",
+                                                      code: httpResponse.statusCode,
+                                                      userInfo: [NSLocalizedDescriptionKey: errorMessage]))
+                } else if let errorMessage = String(data: data, encoding: .utf8) {
+                    print("Server error: HTTP \(httpResponse.statusCode), \(errorMessage)")
+                    throw APIError.networkError(NSError(domain: "ClipboardManager",
+                                                      code: httpResponse.statusCode,
+                                                      userInfo: [NSLocalizedDescriptionKey: errorMessage]))
+                } else {
+                    print("Server error: HTTP \(httpResponse.statusCode), no error message")
+                    throw APIError.invalidResponse
+                }
             }
             
             print("Successfully pasted clip at index \(index)")
