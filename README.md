@@ -1,4 +1,6 @@
-# Clipboard Manager
+# Rockstar - Clipboard Manager
+
+![Cover](images/cover.png)
 
 A powerful clipboard manager for macOS that seamlessly integrates with your workflow. Copy any content - text, images, or files - and access them quickly through a native macOS app. Optionally sync your clipboard history with Obsidian for permanent storage and organization.
 
