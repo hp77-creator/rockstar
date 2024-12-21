@@ -202,14 +202,22 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
     }
     
     // Keep the HTTP methods for initial load and manual refresh
-    func getClips() async throws -> [ClipboardItem] {
-        // Get the user's configured limit from UserDefaults
-        let limit = UserDefaults.standard.integer(forKey: UserDefaultsKeys.maxClipsShown)
-        let effectiveLimit = limit > 0 ? limit : 10 // fallback to 10 if not set
+    func getClips(offset: Int = 0, limit: Int? = nil) async throws -> [ClipboardItem] {
+        // Get the user's configured limit from UserDefaults if not provided
+        let effectiveLimit: Int
+        if let limit = limit {
+            effectiveLimit = limit
+        } else {
+            let userLimit = UserDefaults.standard.integer(forKey: UserDefaultsKeys.maxClipsShown)
+            effectiveLimit = userLimit > 0 ? userLimit : 10 // fallback to 10 if not set
+        }
         
-        // Construct URL with limit parameter
+        // Construct URL with limit and offset parameters
         var urlComponents = URLComponents(string: "\(baseURL)/api/clips")
-        urlComponents?.queryItems = [URLQueryItem(name: "limit", value: String(effectiveLimit))]
+        urlComponents?.queryItems = [
+            URLQueryItem(name: "limit", value: String(effectiveLimit)),
+            URLQueryItem(name: "offset", value: String(offset))
+        ]
         
         guard let url = urlComponents?.url else {
             throw APIError.invalidURL
@@ -297,9 +305,13 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
         }
     }
     
-    func searchClips(query: String) async throws -> [ClipboardItem] {
+    func searchClips(query: String, offset: Int = 0, limit: Int = 20) async throws -> [ClipboardItem] {
         var urlComponents = URLComponents(string: "\(baseURL)/api/search")
-        urlComponents?.queryItems = [URLQueryItem(name: "q", value: query)]
+        urlComponents?.queryItems = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "offset", value: String(offset)),
+            URLQueryItem(name: "limit", value: String(limit))
+        ]
         
         guard let url = urlComponents?.url else {
             throw APIError.invalidURL

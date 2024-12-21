@@ -21,6 +21,10 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
     @Published var isServiceRunning = false
     @Published var isLoading = false
     
+    // Memory management
+    private let maxCachedClips = 100
+    private var isViewActive = false
+    
     #if DEBUG
     @Published var isDebugMode = true
     #else
@@ -47,7 +51,27 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
     
     func didReceiveNewClip(_ clip: ClipboardItem) {
         DispatchQueue.main.async {
+            // Insert new clip at the beginning
             self.clips.insert(clip, at: 0)
+            
+            // Trim cache if needed
+            if self.clips.count > self.maxCachedClips {
+                self.clips = Array(self.clips.prefix(self.maxCachedClips))
+            }
+        }
+    }
+    
+    // Call this when the view appears
+    func viewActivated() {
+        isViewActive = true
+    }
+    
+    // Call this when the view disappears
+    func viewDeactivated() {
+        isViewActive = false
+        // Trim cache more aggressively when view is not active
+        if clips.count > maxCachedClips / 2 {
+            clips = Array(clips.prefix(maxCachedClips / 2))
         }
     }
     
@@ -188,7 +212,7 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
     
     func refreshClips() async {
         do {
-            let clips = try await apiClient.getClips()
+            let clips = try await apiClient.getClips(limit: maxCachedClips)
             await MainActor.run {
                 self.isLoading = false
                 self.error = nil

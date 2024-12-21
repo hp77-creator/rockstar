@@ -6,14 +6,56 @@ struct ClipboardHistoryView: View {
     @State private var searchText = ""
     @State private var isSearching = false
     @State private var searchTask: Task<Void, Never>?
+    @State private var hasInitialized = false
+    @State private var currentPage = 0
+    @State private var hasMoreContent = true
+    @State private var isLoadingMore = false
     @EnvironmentObject private var appState: AppState
     var isInPanel: Bool = false
     @Environment(\.dismiss) private var dismiss
     @Binding var selectedIndex: Int
     
+    private let pageSize = 20
+    
     init(isInPanel: Bool = false, selectedIndex: Binding<Int> = .constant(0)) {
         self.isInPanel = isInPanel
         self._selectedIndex = selectedIndex
+    }
+    
+    private func loadPage(_ page: Int) async {
+        guard !isLoadingMore else { return }
+        isLoadingMore = true
+        
+        do {
+            let newClips = try await appState.apiClient.getClips(offset: page * pageSize, limit: pageSize)
+            await MainActor.run {
+                if page == 0 {
+                    // First page, replace existing clips
+                    appState.clips = newClips
+                } else {
+                    // Subsequent pages, append to existing clips
+                    appState.clips.append(contentsOf: newClips)
+                }
+                hasMoreContent = newClips.count == pageSize
+                currentPage = page
+                isLoadingMore = false
+            }
+        } catch {
+            print("Error loading page \(page): \(error)")
+            await MainActor.run {
+                isLoadingMore = false
+            }
+        }
+    }
+    
+    private func loadMoreContentIfNeeded(currentItem item: ClipboardItem) {
+        let thresholdIndex = appState.clips.index(appState.clips.endIndex, offsetBy: -5)
+        if let itemIndex = appState.clips.firstIndex(where: { $0.id == item.id }),
+           itemIndex == thresholdIndex {
+            Task {
+                await loadPage(currentPage + 1)
+            }
+        }
     }
     
     var body: some View {
@@ -23,13 +65,22 @@ struct ClipboardHistoryView: View {
                 .textFieldStyle(RoundedBorderTextFieldStyle())
                 .padding(.horizontal)
                 .onChange(of: searchText) { newValue in
+                    // Only trigger search after view has initialized
+                    guard hasInitialized else {
+                        hasInitialized = true
+                        return
+                    }
+                    
                     // Cancel any existing search task
                     searchTask?.cancel()
                     
                     if newValue.isEmpty {
-                        // Reset to normal list when search is cleared
+                        // Reset to first page when search is cleared
                         Task {
-                            await appState.refreshClips()
+                            isSearching = false
+                            currentPage = 0
+                            hasMoreContent = true
+                            await loadPage(0)
                         }
                     } else {
                         // Create new search task with debouncing
@@ -74,10 +125,16 @@ struct ClipboardHistoryView: View {
                                     } else {
                                         // Fall back to backend search if no local results
                                         do {
-                                            let results = try await appState.apiClient.searchClips(query: newValue)
+                                            let results = try await appState.apiClient.searchClips(
+                                                query: newValue,
+                                                offset: 0,
+                                                limit: pageSize
+                                            )
                                             if !Task.isCancelled {
                                                 await MainActor.run {
                                                     appState.clips = results
+                                                    hasMoreContent = results.count == pageSize
+                                                    currentPage = 0
                                                 }
                                             }
                                         } catch {
@@ -93,6 +150,7 @@ struct ClipboardHistoryView: View {
                         }
                     }
                 }
+            
             if appState.isDebugMode {
                 if !isInPanel {
                     // Status indicator (only in menu bar)
@@ -125,7 +183,7 @@ struct ClipboardHistoryView: View {
                             .foregroundColor(.secondary)
                     }
                     .frame(width: 300, height: 400)
-                } else if appState.isLoading {
+                } else if appState.isLoading && appState.clips.isEmpty {
                     VStack {
                         ProgressView()
                             .progressViewStyle(.circular)
@@ -156,30 +214,51 @@ struct ClipboardHistoryView: View {
                     }
                     .frame(width: 300, height: 400)
                 } else {
-                    List(Array(appState.clips.enumerated()), id: \.element.id) { index, clip in
-                        ClipboardItemView(item: clip, isSelected: index == selectedIndex) {
-                            try await appState.pasteClip(at: index)
-                            if isInPanel {
-                                PanelWindowManager.hidePanel()
-                            }
-                            // Show visual feedback that content is ready to paste
-                            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .default)
-                            if appState.isDebugMode {
-                                showToast = true
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                    showToast = false
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(Array(appState.clips.enumerated()), id: \.element.id) { index, clip in
+                                ClipboardItemView(item: clip, isSelected: index == selectedIndex) {
+                                    try await appState.pasteClip(at: index)
+                                    if isInPanel {
+                                        PanelWindowManager.hidePanel()
+                                    }
+                                    NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .default)
+                                    if appState.isDebugMode {
+                                        showToast = true
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                            showToast = false
+                                        }
+                                    }
+                                }
+                                .help(appState.isDebugMode ? "Click to copy, then use Cmd+V to paste" : "")
+                                .background(index == selectedIndex ? Color.blue.opacity(0.2) : Color.clear)
+                                .onAppear {
+                                    loadMoreContentIfNeeded(currentItem: clip)
                                 }
                             }
+                            
+                            if isLoadingMore && hasMoreContent {
+                                ProgressView()
+                                    .progressViewStyle(.circular)
+                                    .scaleEffect(0.8)
+                                    .frame(height: 40)
+                            }
                         }
-                        .help(appState.isDebugMode ? "Click to copy, then use Cmd+V to paste" : "")
-                        .listRowBackground(index == selectedIndex ? Color.blue.opacity(0.2) : Color.clear)
                     }
                     .frame(width: 300, height: isInPanel ? 300 : 400)
-                    .listStyle(.plain)
                 }
             }
         }
         .padding()
+        .onAppear {
+            appState.viewActivated()
+            Task {
+                await loadPage(0)
+            }
+        }
+        .onDisappear {
+            appState.viewDeactivated()
+        }
         .overlay(
             Group {
                 if appState.isDebugMode && showToast {
