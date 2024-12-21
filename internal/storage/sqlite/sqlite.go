@@ -200,3 +200,53 @@ func (s *SQLiteStorage) List(ctx context.Context, filter storage.ListFilter) ([]
 
 	return clips, nil
 }
+
+// MarkAsSynced implements storage.Storage interface
+func (s *SQLiteStorage) MarkAsSynced(ctx context.Context, id string) error {
+	result := s.db.Model(&storage.ClipModel{}).
+		Where("id = ?", id).
+		Update("synced_to_obsidian", true)
+	
+	if result.Error != nil {
+		return fmt.Errorf("failed to mark clip as synced: %w", result.Error)
+	}
+	
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("no clip found with id: %s", id)
+	}
+	
+	return nil
+}
+
+// ListUnsynced implements storage.Storage interface
+func (s *SQLiteStorage) ListUnsynced(ctx context.Context, limit int) ([]*types.Clip, error) {
+	var models []storage.ClipModel
+	
+	query := s.db.Model(&storage.ClipModel{}).
+		Where("synced_to_obsidian = ?", false).
+		Order("created_at DESC")
+	
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	
+	if err := query.Find(&models).Error; err != nil {
+		return nil, fmt.Errorf("failed to list unsynced clips: %w", err)
+	}
+
+	clips := make([]*types.Clip, len(models))
+	for i, model := range models {
+		// Load external content if needed
+		if model.IsExternal {
+			path := filepath.Join(s.fsPath, model.StoragePath)
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read external content for clip %d: %w", model.ID, err)
+			}
+			model.Content = content
+		}
+		clips[i] = model.ToClip()
+	}
+
+	return clips, nil
+}

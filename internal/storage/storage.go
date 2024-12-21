@@ -18,6 +18,12 @@ type Storage interface {
 	
 	// List returns clips matching the filter
 	List(ctx context.Context, filter ListFilter) ([]*types.Clip, error)
+
+	// MarkAsSynced marks a clip as synced to Obsidian
+	MarkAsSynced(ctx context.Context, id string) error
+
+	// ListUnsynced returns clips that haven't been synced to Obsidian
+	ListUnsynced(ctx context.Context, limit int) ([]*types.Clip, error)
 }
 
 // ListFilter defines criteria for listing clips
@@ -27,6 +33,7 @@ type ListFilter struct {
 	Tags     []string
 	Limit    int
 	Offset   int
+	SyncedToObsidian *bool // Optional filter for sync status
 }
 
 // Config holds storage configuration

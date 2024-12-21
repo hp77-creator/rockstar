@@ -67,6 +67,7 @@ type ClipModel struct {
 	Category    string      `gorm:"index"`
 	Tags        StringArray `gorm:"type:json"`              // Store as JSON in SQLite
 	LastUsed    time.Time   `gorm:"index"`                  // Track when content was last accessed
+	SyncedToObsidian bool   `gorm:"type:boolean;default:false"` // Track if synced to Obsidian
 }
 
 // ToClip converts ClipModel to public Clip type

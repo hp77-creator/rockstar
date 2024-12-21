@@ -139,11 +139,8 @@ func (s *SyncService) sync(ctx context.Context) error {
 		log.Printf("Vault path verified: %s (%s)", vaultPath, info.Mode())
 	}
 	
-	// Get recent clips
-	clips, err := s.store.List(ctx, storage.ListFilter{
-		Limit:  100, // Adjust as needed
-		Offset: 0,
-	})
+	// Get unsynced clips
+	clips, err := s.store.ListUnsynced(ctx, 100) // Adjust limit as needed
 	if err != nil {
 		return fmt.Errorf("failed to list clips: %w", err)
 	}
@@ -161,8 +158,8 @@ func (s *SyncService) sync(ctx context.Context) error {
 		}
 		log.Printf("Content length: %d bytes", len(content))
 
-		// Generate filename based on timestamp
-		filename := fmt.Sprintf("%s.md", clip.CreatedAt.Format("2006-01-02-150405"))
+		// Generate filename based on date
+		filename := fmt.Sprintf("%s.md", clip.CreatedAt.Format("2006-01-02"))
 		clipboardDir := filepath.Join(vaultPath, "Clipboard")
 		path := filepath.Join(clipboardDir, filename)
 
@@ -190,32 +187,77 @@ func (s *SyncService) sync(ctx context.Context) error {
 		}
 		log.Printf("Clipboard directory created/verified with write permissions")
 
-		// Skip if file already exists
-		if _, err := os.Stat(path); err == nil {
-			log.Printf("Note already exists, skipping: %s", filename)
-			continue
-		}
-
 		// Get tags from metadata
 		tags := clip.Metadata.Tags
 		log.Printf("Tags: %v", tags)
 
-		// Generate frontmatter
-		frontmatter := fmt.Sprintf(`---
-date: %s
+		// Generate entry content based on type
+		var entryContent string
+		if strings.HasPrefix(clip.Type, "image/") {
+			// Create assets directory if it doesn't exist
+			assetsDir := filepath.Join(clipboardDir, "assets")
+			if err := os.MkdirAll(assetsDir, 0755); err != nil {
+				log.Printf("Failed to create assets directory: %v", err)
+				return fmt.Errorf("failed to create assets directory: %w", err)
+			}
+
+			// Generate unique image filename using timestamp
+			imageFilename := fmt.Sprintf("%s-%s%s",
+				clip.CreatedAt.Format("20060102-150405"),
+				clip.ID,
+				s.getImageExtension(clip.Type))
+			imagePath := filepath.Join(assetsDir, imageFilename)
+
+			// Save image file
+			if err := os.WriteFile(imagePath, clip.Content, 0644); err != nil {
+				log.Printf("Failed to write image file: %v", err)
+				return fmt.Errorf("failed to write image file: %w", err)
+			}
+
+			// Use relative path for markdown
+			relImagePath := filepath.Join("assets", imageFilename)
+			entryContent = fmt.Sprintf("![[%s]]", relImagePath)
+		} else {
+			entryContent = content
+		}
+
+		// Generate entry with metadata and content
+		entry := fmt.Sprintf(`
+## %s
+---
 source: %s
 tags: [clipboard%s]
+type: %s
 ---
 
-%s`,
-			clip.CreatedAt.Format(time.RFC3339),
+%s
+
+`,
+			clip.CreatedAt.Format("15:04:05"),
 			clip.Metadata.SourceApp,
 			s.formatTags(tags),
-			content)
+			clip.Type,
+			entryContent)
+
+		var fileContent string
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			// Create new file with date heading
+			fileContent = fmt.Sprintf("# %s\n%s", 
+				clip.CreatedAt.Format("2006-01-02"),
+				entry)
+		} else {
+			// Read existing file
+			existingContent, err := os.ReadFile(path)
+			if err != nil {
+				log.Printf("Failed to read existing file: %v", err)
+				return fmt.Errorf("failed to read existing file: %w", err)
+			}
+			fileContent = string(existingContent) + entry
+		}
 
 		// Write to file with explicit permissions
-		log.Printf("Writing note to: %s", path)
-		if err := os.WriteFile(path, []byte(frontmatter), 0644); err != nil {
+		log.Printf("Writing/Updating note: %s", path)
+		if err := os.WriteFile(path, []byte(fileContent), 0644); err != nil {
 			log.Printf("Failed to write file: %v", err)
 			return fmt.Errorf("failed to write file: %w", err)
 		}
@@ -229,10 +271,35 @@ tags: [clipboard%s]
 		}
 
 		log.Printf("Successfully created note: %s", filename)
+
+		// Mark clip as synced
+		if err := s.store.MarkAsSynced(ctx, clip.ID); err != nil {
+			log.Printf("Failed to mark clip as synced: %v", err)
+			return fmt.Errorf("failed to mark clip as synced: %w", err)
+		}
+		log.Printf("Marked clip %s as synced", clip.ID)
 	}
 
 	log.Printf("Sync operation completed")
 	return nil
+}
+
+// getImageExtension returns the appropriate file extension based on MIME type
+func (s *SyncService) getImageExtension(mimeType string) string {
+	switch mimeType {
+	case "image/png":
+		return ".png"
+	case "image/jpeg", "image/jpg":
+		return ".jpg"
+	case "image/gif":
+		return ".gif"
+	case "image/webp":
+		return ".webp"
+	case "image/svg+xml":
+		return ".svg"
+	default:
+		return ".png" // default to png if unknown
+	}
 }
 
 // formatTags formats tags for frontmatter
