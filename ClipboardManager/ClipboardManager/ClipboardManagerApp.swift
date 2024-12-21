@@ -1,9 +1,15 @@
 import SwiftUI
 import AppKit
 
+class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+    }
+}
+
 @main
 struct ClipboardManagerApp: App {
-    // Keep strong reference to NSApplication and coordinator
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     private let app = NSApplication.shared
     @StateObject private var appState = AppState()
     @StateObject private var hotKeyManager = HotKeyManager.shared
