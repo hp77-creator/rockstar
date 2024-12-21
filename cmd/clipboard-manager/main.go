@@ -71,9 +71,12 @@ func main() {
 	log.Printf("- HTTP server port: %d", *port)
 
 	// Initialize HTTP server
-	httpServer := server.New(clipService, server.Config{
+	httpServer, err := server.New(clipService, server.Config{
 		Port: *port,
 	})
+	if err != nil {
+		log.Fatalf("Failed to initialize HTTP server: %v", err)
+	}
 
 	// Start HTTP server
 	log.Printf("Starting HTTP server...")

@@ -103,6 +103,8 @@ func (m *DarwinMonitor) SetContent(clip types.Clip) error {
 	defer m.mutex.Unlock()
 
 	switch clip.Type {
+	case "text/plain":
+		m.pasteboard.SetStringForType(string(clip.Content), appkit.PasteboardType("public.utf8-plain-text"))
 	case "text":
 		m.pasteboard.SetStringForType(string(clip.Content), appkit.PasteboardType("public.utf8-plain-text"))
 	case "image/png":
@@ -114,7 +116,18 @@ func (m *DarwinMonitor) SetContent(clip types.Clip) error {
 		m.pasteboard.SetDataForType(clip.Content, appkit.PasteboardType("public.png"))
 	case "file":
 		m.pasteboard.SetStringForType(string(clip.Content), appkit.PasteboardType("public.file-url"))
+	case "text/html":
+		// For HTML content, set both HTML and plain text
+		m.pasteboard.SetStringForType(string(clip.Content), appkit.PasteboardType("public.html"))
+		if plainText := string(clip.Content); plainText != "" {
+			m.pasteboard.SetStringForType(plainText, appkit.PasteboardType("public.utf8-plain-text"))
+		}
 	default:
+		// Try as plain text for unknown types
+		if plainText := string(clip.Content); plainText != "" {
+			m.pasteboard.SetStringForType(plainText, appkit.PasteboardType("public.utf8-plain-text"))
+			return nil
+		}
 		return fmt.Errorf("unsupported content type: %s", clip.Type)
 	}
 
@@ -146,7 +159,7 @@ func (m *DarwinMonitor) checkForChanges() {
 		// Check for text content
 		if text := m.pasteboard.StringForType(appkit.PasteboardType("public.utf8-plain-text")); text != "" {
 			clip.Content = []byte(text)
-			clip.Type = "text"
+			clip.Type = "text/plain"
 			handled = true
 		}
 

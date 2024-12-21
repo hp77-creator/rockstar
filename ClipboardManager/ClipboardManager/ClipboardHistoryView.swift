@@ -54,9 +54,9 @@ struct ClipboardHistoryView: View {
                     }
                     .frame(width: 300, height: 400)
                 } else {
-                    List(appState.clips) { clip in
+                    List(Array(appState.clips.enumerated()), id: \.element.id) { index, clip in
                         ClipboardItemView(item: clip) {
-                            appState.pasteClip(at: clip.id)
+                            appState.pasteClip(at: index)
                         }
                     }
                     .frame(width: 300, height: 400)

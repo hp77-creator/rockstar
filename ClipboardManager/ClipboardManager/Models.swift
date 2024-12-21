@@ -295,7 +295,7 @@ class AppState: ObservableObject {
         }
     }
     
-    func pasteClip(at index: String) {
+    func pasteClip(at index: Int) {
         Task {
             do {
                 try await apiClient.pasteClip(at: index)

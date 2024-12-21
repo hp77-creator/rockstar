@@ -18,20 +18,50 @@ type Server struct {
 	clipService *service.ClipboardService
 	srv         *http.Server
 	config      Config
+	pidFile     *pidFile
 }
 
 type Config struct {
 	Port int
 }
 
-func New(clipService *service.ClipboardService, config Config) *Server {
+func New(clipService *service.ClipboardService, config Config) (*Server, error) {
+	pidFile, err := newPIDFile()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create PID file manager: %w", err)
+	}
+
 	return &Server{
 		clipService: clipService,
 		config:      config,
-	}
+		pidFile:     pidFile,
+	}, nil
 }
 
 func (s *Server) Start() error {
+	// Check for existing process
+	if existingPID, err := s.pidFile.read(); err != nil {
+		return fmt.Errorf("failed to read PID file: %w", err)
+	} else if existingPID != 0 {
+		if isRunning(existingPID) {
+			log.Printf("Found existing clipboard manager process (PID: %d), attempting to terminate", existingPID)
+			if err := killProcess(existingPID); err != nil {
+				return fmt.Errorf("failed to terminate existing process: %w", err)
+			}
+			// Give the process time to cleanup
+			time.Sleep(500 * time.Millisecond)
+		}
+		// Clean up stale PID file
+		if err := s.pidFile.remove(); err != nil {
+			return fmt.Errorf("failed to remove stale PID file: %w", err)
+		}
+	}
+
+	// Write current PID
+	if err := s.pidFile.write(); err != nil {
+		return fmt.Errorf("failed to write PID file: %w", err)
+	}
+
 	r := chi.NewRouter()
 
 	// Middleware
@@ -92,6 +122,11 @@ func (s *Server) Stop() error {
 
 	if err := s.srv.Shutdown(ctx); err != nil {
 		return fmt.Errorf("error shutting down server: %w", err)
+	}
+
+	// Clean up PID file
+	if err := s.pidFile.remove(); err != nil {
+		log.Printf("Warning: failed to remove PID file: %v", err)
 	}
 
 	return nil

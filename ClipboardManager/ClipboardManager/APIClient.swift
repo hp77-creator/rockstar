@@ -119,7 +119,7 @@ class APIClient {
         }
     }
     
-    func pasteClip(at index: String) async throws {
+    func pasteClip(at index: Int) async throws {
         guard let url = URL(string: "\(baseURL)/api/clips/\(index)/paste") else {
             throw APIError.invalidURL
         }
