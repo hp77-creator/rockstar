@@ -6,6 +6,8 @@ A powerful clipboard manager for macOS that seamlessly integrates with your work
 
 ![Clipboard Manager App](images/app.png)
 
+[Demo on youtube](https://youtu.be/RYRlP_skwrs)
+
 ## Features
 
 - **Quick Access**: Access your clipboard history instantly through the menu bar
