@@ -4,29 +4,51 @@
 <dict>
 	<key>files</key>
 	<dict>
+		<key>Resources/AppIcon.icns</key>
+		<data>
+		X23sqD1dVsO+Bg7aWfive6jamBc=
+		</data>
+		<key>Resources/Assets.car</key>
+		<data>
+		gIIoV/F97HTVx782hDd0rCUEbjk=
+		</data>
 		<key>Resources/Info.plist</key>
 		<data>
-		DWqalN5g9InenTsuDr4Opbmo58s=
+		Di+djnJrMdRSlPujtXvrtSuY6mM=
 		</data>
 		<key>Resources/clipboard-manager</key>
 		<data>
-		jsZjngmplobfNFZf7nVQDmuGs90=
+		UhNJIDNClNs0tqRraGEyJ5TNJYw=
 		</data>
 	</dict>
 	<key>files2</key>
 	<dict>
+		<key>Resources/AppIcon.icns</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			rY7tLdCKeseaeGVHD3bKnw9IsM1xJKTrzJFrlGVguPA=
+			</data>
+		</dict>
+		<key>Resources/Assets.car</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			gXSjXWUiAAjfztXl7EjjBQ21SzEaAsofB0UuQBWIfM4=
+			</data>
+		</dict>
 		<key>Resources/Info.plist</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			Kh4ZlEV3ifp8CYHxmTbQs+xLrAHh+dtHeRdWnLsSvfg=
+			qDQQC3MhxSuC0ukDXzOV+DdjX52ogazCQvz4pA2uDAc=
 			</data>
 		</dict>
 		<key>Resources/clipboard-manager</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			llHryBH849tgy4l68L+6v+a9gYsFKU88egAfZ/x3ufY=
+			Cn8Y2IiuV0eBoa7+hfjCosEgKZQlicIyvjNecpsrBho=
 			</data>
 		</dict>
 	</dict>

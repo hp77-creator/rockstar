@@ -40,7 +40,7 @@ struct PanelView: View {
     
     private func resetAutoPasteTimer() {
         autopasteTimer?.invalidate()
-        autopasteTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
+        autopasteTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { _ in
             if !appState.clips.isEmpty {
                 Task {
                     do {

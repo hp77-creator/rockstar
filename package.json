@@ -1,0 +1,9 @@
+{
+  "name": "rockstar-icon-generator",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "canvas": "^2.11.2",
+    "puppeteer": "^23.11.1"
+  }
+}
