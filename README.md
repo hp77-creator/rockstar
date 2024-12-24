@@ -12,7 +12,6 @@ A powerful clipboard manager for macOS that seamlessly integrates with your work
 
 - **Quick Access**: Access your clipboard history instantly through the menu bar
 - **Universal Search**: Find any copied content quickly with the powerful search interface
-  ![Search Interface](images/search.png)
 - **Rich Content Support**: 
   - Text with formatting
   - Images and files
