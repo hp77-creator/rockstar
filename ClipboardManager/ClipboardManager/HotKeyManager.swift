@@ -221,7 +221,7 @@ class HotKeyManager: ObservableObject {
                     Logger.debug("Got appState, triggering panel toggle")
                     #endif
                     DispatchQueue.main.async {
-                        PanelWindowManager.togglePanel(with: appState)
+                        SingleClipPanelManager.togglePanel(with: appState)
                     }
                 } else {
                     Logger.debug("AppState is nil")

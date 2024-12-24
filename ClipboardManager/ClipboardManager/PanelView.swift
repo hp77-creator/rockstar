@@ -36,6 +36,25 @@ struct PanelView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var selectedIndex = 0
     @State private var showingSettings = false
+    @State private var autopasteTimer: Timer?
+    
+    private func resetAutoPasteTimer() {
+        autopasteTimer?.invalidate()
+        autopasteTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
+            if !appState.clips.isEmpty {
+                Task {
+                    do {
+                        try await appState.pasteClip(at: selectedIndex)
+                        DispatchQueue.main.async {
+                            PanelWindowManager.hidePanel()
+                        }
+                    } catch {
+                        print("Failed to paste clip: \(error)")
+                    }
+                }
+            }
+        }
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -59,17 +78,20 @@ struct PanelView: View {
         .onAppear {
             // Reset selection when panel appears
             selectedIndex = 0
+            resetAutoPasteTimer()
             
             NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 switch event.keyCode {
-                case 125: // Down arrow
-                    if !appState.clips.isEmpty {
-                        selectedIndex = min(selectedIndex + 1, appState.clips.count - 1)
-                    }
-                    return nil
-                case 126: // Up arrow
+                case 123, 126: // Left arrow or Up arrow
                     if !appState.clips.isEmpty {
                         selectedIndex = max(selectedIndex - 1, 0)
+                        resetAutoPasteTimer()
+                    }
+                    return nil
+                case 124, 125: // Right arrow or Down arrow
+                    if !appState.clips.isEmpty {
+                        selectedIndex = min(selectedIndex + 1, appState.clips.count - 1)
+                        resetAutoPasteTimer()
                     }
                     return nil
                 case 36, 76: // Return key or numpad enter
@@ -77,7 +99,9 @@ struct PanelView: View {
                         Task {
                             do {
                                 try await appState.pasteClip(at: selectedIndex)
-                                PanelWindowManager.hidePanel()
+                                DispatchQueue.main.async {
+                        PanelWindowManager.hidePanel()
+                    }
                             } catch {
                                 print("Failed to paste clip: \(error)")
                             }
@@ -92,6 +116,10 @@ struct PanelView: View {
                 }
             }
         }
+        .onDisappear {
+            autopasteTimer?.invalidate()
+            autopasteTimer = nil
+        }
     }
 }
 
@@ -100,7 +128,8 @@ struct PanelWindowManager {
     private static var panel: ClipboardPanel?
     
     static func showPanel(with appState: AppState) {
-        if panel == nil {
+        DispatchQueue.main.async {
+            if panel == nil {
             // Get the current mouse location
             let mouseLocation = NSEvent.mouseLocation
             let screen = NSScreen.screens.first { screen in
@@ -147,19 +176,24 @@ struct PanelWindowManager {
             panel?.contentView = hostingView
         }
         
-        panel?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+            panel?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
     
     static func hidePanel() {
-        panel?.orderOut(nil)
+        DispatchQueue.main.async {
+            panel?.orderOut(nil)
+        }
     }
     
     static func togglePanel(with appState: AppState) {
-        if panel?.isVisible == true {
-            hidePanel()
-        } else {
-            showPanel(with: appState)
+        DispatchQueue.main.async {
+            if panel?.isVisible == true {
+                hidePanel()
+            } else {
+                showPanel(with: appState)
+            }
         }
     }
 }

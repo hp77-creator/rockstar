@@ -165,7 +165,7 @@ struct ClipboardHistoryView: View {
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(Array(appState.clips.enumerated()), id: \.element.id) { index, clip in
+                            ForEach(Array(appState.clips.enumerated()), id: \.offset) { index, clip in
                                 ClipboardItemView(
                                     item: clip,
                                     isSelected: index == selectedIndex,
