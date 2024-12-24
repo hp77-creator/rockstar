@@ -7,6 +7,7 @@ struct SettingsView: View {
     @AppStorage(UserDefaultsKeys.obsidianVaultPath) private var obsidianVaultPath: String = ""
     @AppStorage(UserDefaultsKeys.obsidianVaultBookmark) private var obsidianVaultBookmark: Data?
     @AppStorage(UserDefaultsKeys.obsidianSyncInterval) private var obsidianSyncInterval: Int = 5
+    @AppStorage(UserDefaultsKeys.playSoundOnCopy) private var playSoundOnCopy: Bool = false
     
     @Environment(\.dismiss) var dismiss
     @State private var showFeedback = false
@@ -14,6 +15,28 @@ struct SettingsView: View {
     var body: some View {
         VStack(spacing: 16) {
             Form {
+                // Sound Settings
+                Section {
+                    Toggle("Play sound on copy", isOn: $playSoundOnCopy)
+                        .help("Play a notification sound when text is copied")
+                        .onChange(of: playSoundOnCopy) { oldValue, newValue in
+                            print("Sound setting changed to: \(newValue)")
+                            withAnimation {
+                                showFeedback = true
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    showFeedback = false
+                                }
+                            }
+                            // Play test sound when enabled
+                            if newValue {
+                                print("Playing test sound")
+                                SoundManager.shared.playCopySound()
+                            }
+                        }
+                } header: {
+                    Text("Sound")
+                }
+                
                 // Display Settings
                 Section {
                     HStack {

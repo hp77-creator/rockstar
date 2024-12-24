@@ -5,12 +5,13 @@ import Carbon.HIToolbox
 
 // Constants
 private let kCFURLErrorDomain = "NSURLErrorDomain"
-enum UserDefaultsKeys {
-    static let maxClipsShown = "maxClipsShown"
-    static let obsidianEnabled = "obsidianEnabled"
-    static let obsidianVaultPath = "obsidianVaultPath"
-    static let obsidianVaultBookmark = "obsidianVaultBookmark"
-    static let obsidianSyncInterval = "obsidianSyncInterval" // in minutes
+public enum UserDefaultsKeys {
+    public static let maxClipsShown = "maxClipsShown"
+    public static let obsidianEnabled = "obsidianEnabled"
+    public static let obsidianVaultPath = "obsidianVaultPath"
+    public static let obsidianVaultBookmark = "obsidianVaultBookmark"
+    public static let obsidianSyncInterval = "obsidianSyncInterval" // in minutes
+    public static let playSoundOnCopy = "playSoundOnCopy"
 }
 
 private let kCFURLErrorConnectionRefused = 61
@@ -89,6 +90,7 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
     
     
     func didReceiveNewClip(_ clip: ClipboardItem) {
+        print("New clip received: \(clip.id)")
         DispatchQueue.main.async {
             // Insert new clip at the beginning
             self.clips.insert(clip, at: 0)
@@ -97,6 +99,10 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
             if self.clips.count > self.maxCachedClips {
                 self.clips = Array(self.clips.prefix(self.maxCachedClips))
             }
+            
+            // Play sound when new clip is received
+            print("Playing sound for new clip")
+            SoundManager.shared.playCopySound()
         }
     }
     

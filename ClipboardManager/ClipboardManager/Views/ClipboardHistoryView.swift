@@ -1,5 +1,6 @@
 import SwiftUI
 import UserNotifications
+import AppKit
 
 struct ClipboardHistoryView: View {
     @State private var showToast = false
@@ -180,14 +181,13 @@ struct ClipboardHistoryView: View {
                                         PanelWindowManager.hidePanel()
                                     }
                                     NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .default)
-                                    if appState.isDebugMode {
-                                        showToast = true
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                            showToast = false
-                                        }
+                                    // Always show toast to inform user they need to press Cmd+V
+                                    showToast = true
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                        showToast = false
                                     }
                                 }
-                                .help(appState.isDebugMode ? "Click to copy, then use Cmd+V to paste" : "")
+                                .help("Click to copy, then use Cmd+V to paste")
                                 .background(index == selectedIndex ? Color.blue.opacity(0.2) : Color.clear)
                                 .onAppear {
                                     loadMoreContentIfNeeded(currentItem: clip)
@@ -282,7 +282,7 @@ struct ClipboardHistoryView: View {
             appState.viewDeactivated()
         }
         .overlay {
-            if appState.isDebugMode && showToast {
+            if showToast {
                 ToastView(message: "Content copied! Press Cmd+V to paste")
                     .animation(.easeInOut, value: showToast)
             }
