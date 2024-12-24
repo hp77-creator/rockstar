@@ -8,6 +8,7 @@ struct SettingsView: View {
     @AppStorage(UserDefaultsKeys.obsidianVaultBookmark) private var obsidianVaultBookmark: Data?
     @AppStorage(UserDefaultsKeys.obsidianSyncInterval) private var obsidianSyncInterval: Int = 5
     @AppStorage(UserDefaultsKeys.playSoundOnCopy) private var playSoundOnCopy: Bool = false
+    @AppStorage(UserDefaultsKeys.selectedSound) private var selectedSound: String = SystemSound.tink.rawValue
     
     @Environment(\.dismiss) var dismiss
     @State private var showFeedback = false
@@ -33,6 +34,24 @@ struct SettingsView: View {
                                 SoundManager.shared.playCopySound()
                             }
                         }
+                    
+                    if playSoundOnCopy {
+                        Picker("Sound", selection: $selectedSound) {
+                            ForEach(SystemSound.allCases, id: \.self) { sound in
+                                Text(sound.displayName).tag(sound.rawValue)
+                            }
+                        }
+                        .onChange(of: selectedSound) { oldValue, newValue in
+                            withAnimation {
+                                showFeedback = true
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    showFeedback = false
+                                }
+                            }
+                            // Play test sound when changed
+                            SoundManager.shared.playCopySound()
+                        }
+                    }
                 } header: {
                     Text("Sound")
                 }

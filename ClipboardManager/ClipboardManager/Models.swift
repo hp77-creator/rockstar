@@ -6,12 +6,13 @@ import Carbon.HIToolbox
 // Constants
 private let kCFURLErrorDomain = "NSURLErrorDomain"
 public enum UserDefaultsKeys {
-    public static let maxClipsShown = "maxClipsShown"
-    public static let obsidianEnabled = "obsidianEnabled"
-    public static let obsidianVaultPath = "obsidianVaultPath"
-    public static let obsidianVaultBookmark = "obsidianVaultBookmark"
-    public static let obsidianSyncInterval = "obsidianSyncInterval" // in minutes
-    public static let playSoundOnCopy = "playSoundOnCopy"
+    static let maxClipsShown = "maxClipsShown"
+    static let obsidianEnabled = "obsidianEnabled"
+    static let obsidianVaultPath = "obsidianVaultPath"
+    static let obsidianVaultBookmark = "obsidianVaultBookmark"
+    static let obsidianSyncInterval = "obsidianSyncInterval" // in minutes
+    static let playSoundOnCopy = "playSoundOnCopy"
+    static let selectedSound = "selectedSound"
 }
 
 private let kCFURLErrorConnectionRefused = 61
