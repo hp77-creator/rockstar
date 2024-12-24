@@ -20,16 +20,60 @@ type SQLiteStorage struct {
 	fsPath string // Base path for file system storage
 }
 
-// New creates a new SQLite storage instance
+// New creates a new SQLite storage instance with optimized configuration
 func New(config storage.Config) (*SQLiteStorage, error) {
+	// Open database with WAL mode enabled
 	db, err := gorm.Open(sqlite.Open(config.DBPath), &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// Auto-migrate the schema
+	// Get the underlying *sql.DB instance
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get underlying *sql.DB: %w", err)
+	}
+
+	// Configure connection pool
+	sqlDB.SetMaxOpenConns(1)  // SQLite only supports one writer at a time
+	sqlDB.SetMaxIdleConns(1)
+	sqlDB.SetConnMaxLifetime(time.Hour)
+
+	// Auto-migrate the schema first
 	if err := db.AutoMigrate(&storage.ClipModel{}); err != nil {
 		return nil, fmt.Errorf("failed to migrate schema: %w", err)
+	}
+
+	// Apply performance optimizations
+	if err := db.Exec(`
+		-- Enable WAL mode for better concurrency and performance
+		PRAGMA journal_mode = WAL;
+		
+		-- NORMAL provides good durability with better performance
+		-- In WAL mode, NORMAL is safe as WAL provides durability
+		PRAGMA synchronous = NORMAL;
+		
+		-- Increase cache size to 16MB (4000 pages * 4KB per page)
+		PRAGMA cache_size = -4000;
+		
+		-- Enable memory-mapped I/O for reading
+		PRAGMA mmap_size = 268435456;  -- 256MB
+		
+		-- Set busy timeout to 5 seconds
+		PRAGMA busy_timeout = 5000;
+		
+		-- Enable foreign key constraints
+		PRAGMA foreign_keys = ON;
+	`).Error; err != nil {
+		return nil, fmt.Errorf("failed to set PRAGMA options: %w", err)
+	}
+
+	// Create indexes after table creation
+	if err := db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_clips_content_hash ON clip_models(content_hash);
+		CREATE INDEX IF NOT EXISTS idx_clips_last_used ON clip_models(last_used);
+	`).Error; err != nil {
+		return nil, fmt.Errorf("failed to create indexes: %w", err)
 	}
 
 	// Create storage directory if it doesn't exist
@@ -47,6 +91,26 @@ func New(config storage.Config) (*SQLiteStorage, error) {
 func calculateHash(content []byte) string {
 	hash := sha256.Sum256(content)
 	return hex.EncodeToString(hash[:])
+}
+
+// Close closes the database connection and cleans up WAL files
+func (s *SQLiteStorage) Close() error {
+	sqlDB, err := s.db.DB()
+	if err != nil {
+		return fmt.Errorf("failed to get underlying *sql.DB: %w", err)
+	}
+
+	// Checkpoint WAL file and merge it with the main database
+	if err := s.db.Exec("PRAGMA wal_checkpoint(TRUNCATE);").Error; err != nil {
+		return fmt.Errorf("failed to checkpoint WAL: %w", err)
+	}
+
+	// Close database connection
+	if err := sqlDB.Close(); err != nil {
+		return fmt.Errorf("failed to close database: %w", err)
+	}
+
+	return nil
 }
 
 // Store implements storage.Storage interface
