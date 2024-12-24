@@ -43,11 +43,11 @@ struct SingleClipPanelView: View {
         }
     }
     
-    private func resetAutoPasteTimer() {
-        Logger.debug("Resetting auto-paste timer...")
+    private func resetIdleTimer() {
+        Logger.debug("Resetting idle timer...")
         autopasteTimer?.invalidate()
-        autopasteTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { _ in
-            Logger.debug("Auto-paste timer fired")
+        autopasteTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { _ in
+            Logger.debug("Idle timer fired - user has been idle for 3 seconds")
             if !appState.clips.isEmpty {
                 Task {
                     do {
@@ -100,20 +100,20 @@ struct SingleClipPanelView: View {
         .shadow(radius: 5)
         .onAppear {
             selectedIndex = 0
-            resetAutoPasteTimer()
+            resetIdleTimer()
             
             NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 switch event.keyCode {
                 case 123: // Left arrow
                     if !appState.clips.isEmpty {
                         selectedIndex = max(selectedIndex - 1, 0)
-                        resetAutoPasteTimer()
+                        resetIdleTimer()
                     }
                     return nil
                 case 124: // Right arrow
                     if !appState.clips.isEmpty {
                         selectedIndex = min(selectedIndex + 1, appState.clips.count - 1)
-                        resetAutoPasteTimer()
+                        resetIdleTimer()
                     }
                     return nil
                 case 36, 76: // Return key or numpad enter
