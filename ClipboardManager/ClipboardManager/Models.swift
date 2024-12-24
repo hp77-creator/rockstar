@@ -13,6 +13,7 @@ public enum UserDefaultsKeys {
     static let obsidianSyncInterval = "obsidianSyncInterval" // in minutes
     static let playSoundOnCopy = "playSoundOnCopy"
     static let selectedSound = "selectedSound"
+    static let debugEnabled = "DEBUG_ENABLED"
 }
 
 private let kCFURLErrorConnectionRefused = 61
@@ -40,9 +41,9 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
     
     init() {
         #if DEBUG
-        print("Running in DEBUG configuration")
+        Logger.debug("Running in DEBUG configuration")
         #else
-        print("Running in RELEASE configuration")
+        Logger.debug("Running in RELEASE configuration")
         #endif
         
         // Initialize properties before using them
@@ -70,10 +71,12 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
     }
     
     @objc private func handleRestartService() {
-        print("Restarting Go service due to Obsidian settings change")
-        print("- Enabled: \(UserDefaults.standard.bool(forKey: UserDefaultsKeys.obsidianEnabled))")
-        print("- Vault Path: \(UserDefaults.standard.string(forKey: UserDefaultsKeys.obsidianVaultPath) ?? "not set")")
-        print("- Sync Interval: \(UserDefaults.standard.integer(forKey: UserDefaultsKeys.obsidianSyncInterval)) minutes")
+        Logger.debug("""
+        Restarting Go service due to Obsidian settings change:
+        - Enabled: \(UserDefaults.standard.bool(forKey: UserDefaultsKeys.obsidianEnabled))
+        - Vault Path: \(UserDefaults.standard.string(forKey: UserDefaultsKeys.obsidianVaultPath) ?? "not set")
+        - Sync Interval: \(UserDefaults.standard.integer(forKey: UserDefaultsKeys.obsidianSyncInterval)) minutes
+        """)
         
         // Delay the restart to allow WebSocket to close gracefully
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
@@ -91,7 +94,7 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
     
     
     func didReceiveNewClip(_ clip: ClipboardItem) {
-        print("New clip received: \(clip.id)")
+        Logger.debug("New clip received: \(clip.id)")
         DispatchQueue.main.async {
             // Insert new clip at the beginning
             self.clips.insert(clip, at: 0)
@@ -102,7 +105,7 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
             }
             
             // Play sound when new clip is received
-            print("Playing sound for new clip")
+            Logger.debug("Playing sound for new clip")
             SoundManager.shared.playCopySound()
         }
     }
@@ -146,11 +149,11 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
                 attributes = try fileManager.attributesOfItem(atPath: path)
                 let permissions = attributes[.posixPermissions] as? NSNumber
                 if permissions?.int16Value != 0o755 {
-                    print("Fixing executable permissions")
+                    Logger.debug("Fixing executable permissions")
                     try fileManager.setAttributes([.posixPermissions: NSNumber(value: 0o755)], ofItemAtPath: path)
                 }
             } catch {
-                print("Failed to verify/set executable permissions: \(error)")
+                Logger.error("Failed to verify/set executable permissions: \(error)")
                 throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to set executable permissions"])
             }
             
@@ -193,7 +196,7 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
                                         bookmarkDataIsStale: &isStale)
                         
                         if isStale {
-                            print("Warning: Bookmark is stale")
+                            Logger.warn("Bookmark is stale")
                         }
                         
                         // Start accessing security-scoped resource
@@ -203,17 +206,18 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
                             env["OBSIDIAN_VAULT_PATH"] = url.path
                             env["OBSIDIAN_SYNC_INTERVAL"] = String(UserDefaults.standard.integer(forKey: UserDefaultsKeys.obsidianSyncInterval))
                         } else {
-                            print("Failed to access security-scoped resource")
+                            Logger.error("Failed to access security-scoped resource")
                         }
                     } catch {
-                        print("Failed to resolve bookmark: \(error)")
+                        Logger.error("Failed to resolve bookmark: \(error)")
                     }
                 }
             }
             
-            #if DEBUG
-            env["CLIPBOARD_DEBUG"] = "true"
-            #endif
+            // Set debug flag based on user preference
+            if UserDefaults.standard.bool(forKey: UserDefaultsKeys.debugEnabled) {
+                env["DEBUG"] = "1"
+            }
             
             // Ensure PATH includes common locations
             let defaultPath = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -227,21 +231,24 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
             goProcess?.standardOutput = stdoutPipe
             goProcess?.standardError = stderrPipe
             
-            print("Starting Go server process:")
-            print("- Executable: \(path)")
-            print("- Working Directory: \(resourcePath)")
-            print("- Database Path: \(dbPath)")
-            print("- Files Path: \(fsPath)")
-            print("- Home Directory: \(env["HOME"] ?? "not set")")
-            print("- User: \(env["USER"] ?? "not set")")
-            print("- PATH: \(env["PATH"] ?? "not set")")
+            Logger.debug("""
+            Starting Go server process:
+            - Executable: \(path)
+            - Working Directory: \(resourcePath)
+            - Database Path: \(dbPath)
+            - Files Path: \(fsPath)
+            - Home Directory: \(env["HOME"] ?? "not set")
+            - User: \(env["USER"] ?? "not set")
+            - PATH: \(env["PATH"] ?? "not set")
+            - Debug Mode: \(UserDefaults.standard.bool(forKey: UserDefaultsKeys.debugEnabled))
+            """)
             
             // Set up logging handlers
             stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 guard !data.isEmpty else { return }
                 if let output = String(data: data, encoding: .utf8) {
-                    print("Server stdout: \(output)")
+                    Logger.debug("Server stdout: \(output)")
                 }
             }
             
@@ -249,7 +256,7 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
                 let data = handle.availableData
                 guard !data.isEmpty else { return }
                 if let output = String(data: data, encoding: .utf8) {
-                    print("Server stderr: \(output)")
+                    Logger.error("Server stderr: \(output)")
                 }
             }
             
@@ -272,7 +279,7 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
                         
                         if let httpResponse = response as? HTTPURLResponse,
                            httpResponse.statusCode == 200 {
-                            print("Server health check passed")
+                            Logger.debug("Server health check passed")
                             
                             // Server is healthy, load initial clips
                             await MainActor.run {
@@ -283,7 +290,7 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
                             return
                         }
                     } catch {
-                        print("Health check attempt \(attempts + 1) failed: \(error)")
+                        Logger.debug("Health check attempt \(attempts + 1) failed: \(error)")
                     }
                     
                     attempts += 1
@@ -292,11 +299,11 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
                     }
                 }
                 
-                print("Server health checks exhausted")
+                Logger.warn("Server health checks exhausted")
                 // Don't update service status since clips might still work
             }
         } catch {
-            print("Failed to start clipboard service: \(error)")
+            Logger.error("Failed to start clipboard service: \(error)")
             self.error = error.localizedDescription
             isServiceRunning = false
             isLoading = false
@@ -331,7 +338,7 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
             } catch {
                 await MainActor.run {
                     self.isLoading = false
-                    print("Failed to load initial clips: \(error)")
+                    Logger.error("Failed to load initial clips: \(error)")
                     // Don't mark service as stopped, it might still be starting
                     self.retryConnection()
                 }
@@ -345,10 +352,10 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
             
             // Only retry if service is marked as running and not restarting
             if self.isServiceRunning {
-                print("Retrying connection...")
+                Logger.debug("Retrying connection...")
                 self.loadInitialClips()
             } else {
-                print("Service not running, skipping retry")
+                Logger.debug("Service not running, skipping retry")
             }
         }
     }
@@ -362,7 +369,7 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
             }
         } catch {
             let nsError = error as NSError
-            print("Network error in pasteClip: \(nsError.code) - \(nsError.localizedDescription)")
+            Logger.error("Network error in pasteClip: \(nsError.code) - \(nsError.localizedDescription)")
             await MainActor.run {
                 if nsError.domain == kCFURLErrorDomain {
                     switch nsError.code {
@@ -383,7 +390,7 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
             }
             throw error
         } catch let error as APIError {
-            print("API error in pasteClip: \(error)")
+            Logger.error("API error in pasteClip: \(error)")
             await MainActor.run {
                 switch error {
                 case .invalidURL:
@@ -396,13 +403,13 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
                 case .decodingError(let decodingError):
                     self.error = "Data error: \(decodingError.localizedDescription)"
                 case .sessionInvalidated:
-                    print("Session invalidated, restarting service")
+                    Logger.debug("Session invalidated, restarting service")
                     self.startGoService()
                 }
             }
             throw error
         } catch {
-            print("Unexpected error in pasteClip: \(error)")
+            Logger.error("Unexpected error in pasteClip: \(error)")
             await MainActor.run {
                 self.error = error.localizedDescription
             }

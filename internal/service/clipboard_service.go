@@ -14,6 +14,14 @@ import (
 	"time"
 )
 
+var debugMode = os.Getenv("DEBUG") == "1"
+
+func debugLog(format string, args ...interface{}) {
+	if debugMode {
+		log.Printf("[DEBUG] "+format, args...)
+	}
+}
+
 // Custom error types for better error handling
 type ClipboardError struct {
 	Op      string // Operation that failed
@@ -55,46 +63,48 @@ func New(monitor clipboard.Monitor, store storage.Storage) *ClipboardService {
 		cancel:  cancel,
 	}
 
-	// Log all environment variables
-	log.Printf("Environment variables:")
-	for _, env := range []string{"OBSIDIAN_ENABLED", "OBSIDIAN_VAULT_PATH", "OBSIDIAN_SYNC_INTERVAL", 
-		"HOME", "TMPDIR", "USER", "CLIPBOARD_DB_PATH", "CLIPBOARD_FS_PATH", "CLIPBOARD_API_PORT"} {
-		log.Printf("- %s: %s", env, os.Getenv(env))
+	// Log environment variables in debug mode
+	if debugMode {
+		debugLog("Environment variables:")
+		for _, env := range []string{"OBSIDIAN_ENABLED", "OBSIDIAN_VAULT_PATH", "OBSIDIAN_SYNC_INTERVAL", 
+			"HOME", "TMPDIR", "USER", "CLIPBOARD_DB_PATH", "CLIPBOARD_FS_PATH", "CLIPBOARD_API_PORT"} {
+			debugLog("- %s: %s", env, os.Getenv(env))
+		}
 	}
 
 	// Initialize Obsidian sync if enabled
 	if os.Getenv("OBSIDIAN_ENABLED") == "true" {
-		log.Printf("Obsidian sync is enabled")
+		debugLog("Obsidian sync is enabled")
 		vaultPath := os.Getenv("OBSIDIAN_VAULT_PATH")
 		if vaultPath == "" {
-			log.Printf("Warning: OBSIDIAN_VAULT_PATH is not set")
+			log.Printf("[WARN] OBSIDIAN_VAULT_PATH is not set")
 			return service
 		}
 
 		// Verify vault path exists and is accessible
 		if info, err := os.Stat(vaultPath); os.IsNotExist(err) {
-			log.Printf("Warning: Obsidian vault path does not exist: %s", vaultPath)
+			log.Printf("[WARN] Obsidian vault path does not exist: %s", vaultPath)
 			return service
 		} else {
-			log.Printf("Vault path verification:")
-			log.Printf("- Path: %s", vaultPath)
-			log.Printf("- Mode: %s", info.Mode().String())
-			log.Printf("- Size: %d", info.Size())
-			log.Printf("- ModTime: %s", info.ModTime())
+			debugLog("Vault path verification:")
+			debugLog("- Path: %s", vaultPath)
+			debugLog("- Mode: %s", info.Mode().String())
+			debugLog("- Size: %d", info.Size())
+			debugLog("- ModTime: %s", info.ModTime())
 			if !info.IsDir() {
-				log.Printf("Warning: Vault path is not a directory")
+				log.Printf("[WARN] Vault path is not a directory")
 				return service
 			}
 		}
 
 		// List vault directory contents
 		if files, err := os.ReadDir(vaultPath); err == nil {
-			log.Printf("Vault directory contents:")
+			debugLog("Vault directory contents:")
 			for _, file := range files {
-				log.Printf("- %s (%v)", file.Name(), file.IsDir())
+				debugLog("- %s (%v)", file.Name(), file.IsDir())
 			}
 		} else {
-			log.Printf("Warning: Failed to list vault directory: %v", err)
+			log.Printf("[WARN] Failed to list vault directory: %v", err)
 		}
 
 		// Get sync interval
@@ -104,13 +114,13 @@ func New(monitor clipboard.Monitor, store storage.Storage) *ClipboardService {
 			if minutes, err := strconv.Atoi(syncInterval); err == nil {
 				// Ensure minimum 1 minute interval
 				if minutes < 1 {
-					log.Printf("Warning: Sync interval must be at least 1 minute, using default")
+					log.Printf("[WARN] Sync interval must be at least 1 minute, using default")
 				} else {
 					interval = time.Duration(minutes) * time.Minute
-					log.Printf("Using sync interval: %v", interval)
+					debugLog("Using sync interval: %v", interval)
 				}
 			} else {
-				log.Printf("Warning: Invalid sync interval '%s', using default", syncInterval)
+				log.Printf("[WARN] Invalid sync interval '%s', using default", syncInterval)
 			}
 		}
 
@@ -120,15 +130,15 @@ func New(monitor clipboard.Monitor, store storage.Storage) *ClipboardService {
 
 			// Try to update vault path
 			if err := service.obsidianSync.UpdateVaultPath(vaultPath); err != nil {
-				log.Printf("Failed to update vault path: %v", err)
+				log.Printf("[ERROR] Failed to update vault path: %v", err)
 				needsReset = true
 			} else {
-				log.Printf("Updated vault path for existing sync service")
+				debugLog("Updated vault path for existing sync service")
 			}
 
 			// Update sync interval
 			service.obsidianSync.UpdateSyncInterval(interval)
-			log.Printf("Updated sync interval for existing sync service")
+			debugLog("Updated sync interval for existing sync service")
 
 			if !needsReset {
 				return service
@@ -138,16 +148,16 @@ func New(monitor clipboard.Monitor, store storage.Storage) *ClipboardService {
 			service.obsidianSync = nil
 		}
 
-		log.Printf("Initializing Obsidian sync with vault path: %s, interval: %v", vaultPath, interval)
+		debugLog("Initializing Obsidian sync with vault path: %s, interval: %v", vaultPath, interval)
 		syncService, err := obsidian.New(store, obsidian.Config{
 			VaultPath:    vaultPath,
 			SyncInterval: interval,
 		})
 		if err != nil {
-			log.Printf("Failed to initialize Obsidian sync: %v", err)
+			log.Printf("[ERROR] Failed to initialize Obsidian sync: %v", err)
 		} else {
 			service.obsidianSync = syncService
-			log.Printf("Obsidian sync service initialized successfully")
+			debugLog("Obsidian sync service initialized successfully")
 		}
 	}
 
@@ -165,14 +175,14 @@ func (s *ClipboardService) RegisterHandler(handler ClipboardChangeHandler) {
 func (s *ClipboardService) Start() error {
 	// Start Obsidian sync if configured
 	if s.obsidianSync != nil {
-		log.Printf("Starting Obsidian sync service...")
+		debugLog("Starting Obsidian sync service...")
 		if err := s.obsidianSync.Start(s.ctx); err != nil {
-			log.Printf("Failed to start Obsidian sync: %v", err)
+			log.Printf("[ERROR] Failed to start Obsidian sync: %v", err)
 		} else {
-			log.Printf("Obsidian sync service started successfully")
+			debugLog("Obsidian sync service started successfully")
 		}
 	} else {
-		log.Printf("No Obsidian sync service configured")
+		debugLog("No Obsidian sync service configured")
 	}
 
 	// Set up clipboard change handler
@@ -181,7 +191,7 @@ func (s *ClipboardService) Start() error {
 		go func() {
 			defer s.wg.Done()
 			if err := s.handleClipboardChange(clip); err != nil {
-				log.Printf("Error handling clipboard change: %v", err)
+				log.Printf("[ERROR] Error handling clipboard change: %v", err)
 				return
 			}
 			
@@ -254,13 +264,13 @@ func (s *ClipboardService) GetClips(ctx context.Context, limit, offset int) ([]*
 
 // GetClipByIndex returns the nth most recent clip (0 being the most recent)
 func (s *ClipboardService) GetClipByIndex(ctx context.Context, index int) (*types.Clip, error) {
-	log.Printf("Getting clip at index %d", index)
+	debugLog("Getting clip at index %d", index)
 	clips, err := s.store.List(ctx, storage.ListFilter{
 		Limit:  index + 1,
 		Offset: 0,
 	})
 	if err != nil {
-		log.Printf("Error getting clips: %v", err)
+		log.Printf("[ERROR] Error getting clips: %v", err)
 		return nil, &ClipboardError{
 			Op:      "GetClipByIndex",
 			Index:   index,
@@ -269,9 +279,9 @@ func (s *ClipboardService) GetClipByIndex(ctx context.Context, index int) (*type
 		}
 	}
 
-	log.Printf("Found %d clips", len(clips))
+	debugLog("Found %d clips", len(clips))
 	if len(clips) <= index {
-		log.Printf("No clip found at index %d", index)
+		debugLog("No clip found at index %d", index)
 		return nil, &ClipboardError{
 			Op:      "GetClipByIndex",
 			Index:   index,
@@ -281,14 +291,14 @@ func (s *ClipboardService) GetClipByIndex(ctx context.Context, index int) (*type
 	}
 
 	clip := clips[index]
-	log.Printf("Retrieved clip - Type: %s, Content Length: %d", clip.Type, len(clip.Content))
+	debugLog("Retrieved clip - Type: %s, Content Length: %d", clip.Type, len(clip.Content))
 	return clip, nil
 }
 
 // SetClipboard sets the system clipboard to the content of the specified clip
 func (s *ClipboardService) SetClipboard(ctx context.Context, clip *types.Clip) error {
 	if clip == nil {
-		log.Printf("Error: clip is nil")
+		log.Printf("[ERROR] clip is nil")
 		return &ClipboardError{
 			Op:      "SetClipboard",
 			Index:   -1,
@@ -297,9 +307,9 @@ func (s *ClipboardService) SetClipboard(ctx context.Context, clip *types.Clip) e
 		}
 	}
 
-	log.Printf("Setting clipboard - Type: %s, Content Length: %d", clip.Type, len(clip.Content))
+	debugLog("Setting clipboard - Type: %s, Content Length: %d", clip.Type, len(clip.Content))
 	if err := s.monitor.SetContent(*clip); err != nil {
-		log.Printf("Error setting clipboard content: %v", err)
+		log.Printf("[ERROR] Error setting clipboard content: %v", err)
 		return &ClipboardError{
 			Op:      "SetClipboard",
 			Index:   -1,
@@ -307,16 +317,16 @@ func (s *ClipboardService) SetClipboard(ctx context.Context, clip *types.Clip) e
 			Err:     err,
 		}
 	}
-	log.Printf("Successfully set clipboard content")
+	debugLog("Successfully set clipboard content")
 	return nil
 }
 
 // PasteByIndex sets the clipboard to the nth most recent clip
 func (s *ClipboardService) PasteByIndex(ctx context.Context, index int) error {
-	log.Printf("Paste request for index %d", index)
+	debugLog("Paste request for index %d", index)
 	clip, err := s.GetClipByIndex(ctx, index)
 	if err != nil {
-		log.Printf("Error getting clip at index %d: %v", index, err)
+		log.Printf("[ERROR] Error getting clip at index %d: %v", index, err)
 		return &ClipboardError{
 			Op:      "PasteByIndex",
 			Index:   index,
@@ -325,9 +335,9 @@ func (s *ClipboardService) PasteByIndex(ctx context.Context, index int) error {
 		}
 	}
 
-	log.Printf("Found clip at index %d - Type: %s, Content Length: %d", index, clip.Type, len(clip.Content))
+	debugLog("Found clip at index %d - Type: %s, Content Length: %d", index, clip.Type, len(clip.Content))
 	if err := s.SetClipboard(ctx, clip); err != nil {
-		log.Printf("Error setting clipboard: %v", err)
+		log.Printf("[ERROR] Error setting clipboard: %v", err)
 		return &ClipboardError{
 			Op:      "PasteByIndex",
 			Index:   index,
@@ -335,7 +345,7 @@ func (s *ClipboardService) PasteByIndex(ctx context.Context, index int) error {
 			Err:     err,
 		}
 	}
-	log.Printf("Successfully pasted clip at index %d", index)
+	debugLog("Successfully pasted clip at index %d", index)
 	return nil
 }
 
@@ -395,7 +405,7 @@ func (s *ClipboardService) handleClipboardChange(clip types.Clip) error {
 	// Store the clip
 	_, err := s.store.Store(s.ctx, clip.Content, clip.Type, clip.Metadata)
 	if err == storage.ErrFileTooLarge {
-		log.Printf("Content too large to store (size: %d bytes)", len(clip.Content))
+		debugLog("Content too large to store (size: %d bytes)", len(clip.Content))
 		return nil
 	} else if err != nil {
 		return &ClipboardError{
@@ -406,7 +416,7 @@ func (s *ClipboardService) handleClipboardChange(clip types.Clip) error {
 		}
 	}
 
-	log.Printf("Stored new clipboard content (type: %s, source: %s)", 
+	debugLog("Stored new clipboard content (type: %s, source: %s)", 
 		clip.Type, clip.Metadata.SourceApp)
 
 	return nil

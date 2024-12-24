@@ -1,5 +1,8 @@
 import Foundation
 
+// Add Logger import
+import SwiftUI
+
 enum APIError: Error, Equatable {
     case invalidURL
     case networkError(Error)
@@ -65,12 +68,12 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
         }
         
         self.session = URLSession(configuration: config, delegate: self, delegateQueue: .main)
-        print("APIClient initialized with baseURL: \(baseURL)")
+        Logger.debug("APIClient initialized with baseURL: \(baseURL)")
         connectWebSocket()
     }
     
     deinit {
-        print("APIClient deinitializing")
+        Logger.debug("APIClient deinitializing")
         disconnect()
     }
     
@@ -88,11 +91,11 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
         // This helps with server that's slow to start
         let wsURL = wsURLs[currentWSURLIndex]
         guard let url = URL(string: wsURL) else {
-            print("Invalid WebSocket URL: \(wsURL)")
+            Logger.error("Invalid WebSocket URL: \(wsURL)")
             return
         }
         
-        print("Attempting WebSocket connection to \(wsURL) (Attempt \(connectionAttempts + 1))")
+        Logger.debug("Attempting WebSocket connection to \(wsURL) (Attempt \(connectionAttempts + 1))")
         
         webSocket = session.webSocketTask(with: url)
         webSocket?.resume()
@@ -116,7 +119,7 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
     }
     
     func disconnect() {
-        print("Disconnecting APIClient")
+        Logger.debug("Disconnecting APIClient")
         isSessionValid = false
         disconnectWebSocket()
         session.invalidateAndCancel()
@@ -143,7 +146,7 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
                 self.receiveMessage()
                 
             case .failure(let error):
-                print("WebSocket receive error: \(error)")
+                Logger.error("WebSocket receive error: \(error)")
                 self.handleWebSocketError()
             }
         }
@@ -175,7 +178,7 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
                     }
                 }
                 
-                print("Failed to parse date: \(dateString)")
+                Logger.error("Failed to parse date: \(dateString)")
                 throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid date format")
             }
             
@@ -188,7 +191,7 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
                 }
             }
         } catch {
-            print("Error decoding WebSocket message: \(error)")
+            Logger.error("Error decoding WebSocket message: \(error)")
         }
     }
     
@@ -199,7 +202,7 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
         
         if currentWSURLIndex < wsURLs.count - 1 {
             currentWSURLIndex += 1
-            print("Switching to next WebSocket URL: \(wsURLs[currentWSURLIndex])")
+            Logger.debug("Switching to next WebSocket URL: \(wsURLs[currentWSURLIndex])")
             connectWebSocket()
             return
         }
@@ -207,12 +210,12 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
         currentWSURLIndex = 0
         
         let backoffTime = min(pow(2.0, Double(connectionAttempts)), 30.0)
-        print("Scheduling reconnection in \(backoffTime) seconds")
+        Logger.debug("Scheduling reconnection in \(backoffTime) seconds")
         
         reconnectTimer?.invalidate()
         reconnectTimer = Timer.scheduledTimer(withTimeInterval: backoffTime, repeats: false) { [weak self] _ in
             guard let self = self, self.isSessionValid else {
-                print("Session invalidated, cancelling reconnection")
+                Logger.debug("Session invalidated, cancelling reconnection")
                 return
             }
             self.connectWebSocket()
@@ -222,13 +225,13 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
     // MARK: - URLSessionWebSocketDelegate
     
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
-        print("WebSocket connected successfully to \(wsURLs[currentWSURLIndex])")
+        Logger.debug("WebSocket connected successfully to \(wsURLs[currentWSURLIndex])")
         isConnected = true
         connectionAttempts = 0
     }
     
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
-        print("WebSocket closed with code: \(closeCode)")
+        Logger.debug("WebSocket closed with code: \(closeCode)")
         isConnected = false
         handleWebSocketError()
     }
@@ -256,14 +259,14 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
             throw APIError.invalidURL
         }
         
-        print("Requesting clips from: \(url)")
+        Logger.debug("Requesting clips from: \(url)")
         
         do {
             let (data, response) = try await session.data(from: url)
             
             guard let httpResponse = response as? HTTPURLResponse,
                   httpResponse.statusCode == 200 else {
-                print("Invalid response: \(response)")
+                Logger.error("Invalid response: \(response)")
                 throw APIError.invalidResponse
             }
             
@@ -288,16 +291,16 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
                     }
                 }
                 
-                print("Failed to parse date: \(dateString)")
+                Logger.error("Failed to parse date: \(dateString)")
                 throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid date format")
             }
             
             do {
                 let clips = try decoder.decode([ClipboardItem].self, from: data)
-                print("Successfully decoded \(clips.count) clips")
+                Logger.debug("Successfully decoded \(clips.count) clips")
                 return clips
             } catch {
-                print("Decoding error: \(error)")
+                Logger.error("Decoding error: \(error)")
                 throw APIError.decodingError(error)
             }
         } catch let error as DecodingError {
@@ -321,14 +324,14 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
             throw APIError.invalidURL
         }
         
-        print("Searching clips with query: \(query)")
+        Logger.debug("Searching clips with query: \(query)")
         
         do {
             let (data, response) = try await session.data(from: url)
             
             guard let httpResponse = response as? HTTPURLResponse,
                   httpResponse.statusCode == 200 else {
-                print("Invalid response: \(response)")
+                Logger.error("Invalid response: \(response)")
                 throw APIError.invalidResponse
             }
             
@@ -353,14 +356,14 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
                     }
                 }
                 
-                print("Failed to parse date: \(dateString)")
+                Logger.error("Failed to parse date: \(dateString)")
                 throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid date format")
             }
             
             let searchResults = try decoder.decode([SearchResult].self, from: data)
             return searchResults.map { $0.clip }
         } catch {
-            print("Search error: \(error)")
+            Logger.error("Search error: \(error)")
             throw APIError.networkError(error)
         }
     }
@@ -372,7 +375,7 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
             throw APIError.invalidURL
         }
         
-        print("Sending paste request for clip at index: \(index)")
+        Logger.debug("Sending paste request for clip at index: \(index)")
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -382,34 +385,34 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
             let (data, response) = try await session.data(for: request)
             
             guard let httpResponse = response as? HTTPURLResponse else {
-                print("Invalid response type: \(response)")
+                Logger.error("Invalid response type: \(response)")
                 throw APIError.invalidResponse
             }
             
             guard httpResponse.statusCode == 200 else {
                 if let errorData = try? JSONDecoder().decode([String: String].self, from: data) {
                     let errorMessage = errorData["error"] ?? errorData["detail"] ?? "Unknown error"
-                    print("Server error: HTTP \(httpResponse.statusCode), \(errorMessage)")
+                    Logger.error("Server error: HTTP \(httpResponse.statusCode), \(errorMessage)")
                     throw APIError.networkError(NSError(domain: "ClipboardManager",
                                                       code: httpResponse.statusCode,
                                                       userInfo: [NSLocalizedDescriptionKey: errorMessage]))
                 } else if let errorMessage = String(data: data, encoding: .utf8) {
-                    print("Server error: HTTP \(httpResponse.statusCode), \(errorMessage)")
+                    Logger.error("Server error: HTTP \(httpResponse.statusCode), \(errorMessage)")
                     throw APIError.networkError(NSError(domain: "ClipboardManager",
                                                       code: httpResponse.statusCode,
                                                       userInfo: [NSLocalizedDescriptionKey: errorMessage]))
                 } else {
-                    print("Server error: HTTP \(httpResponse.statusCode), no error message")
+                    Logger.error("Server error: HTTP \(httpResponse.statusCode), no error message")
                     throw APIError.invalidResponse
                 }
             }
             
-            print("Successfully pasted clip at index \(index)")
+            Logger.debug("Successfully pasted clip at index \(index)")
         } catch let error as URLError {
-            print("Network error during paste: \(error.localizedDescription)")
+            Logger.error("Network error during paste: \(error.localizedDescription)")
             throw APIError.networkError(error)
         } catch {
-            print("Unexpected error during paste: \(error)")
+            Logger.error("Unexpected error during paste: \(error)")
             throw APIError.networkError(error)
         }
     }
@@ -421,7 +424,7 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
             throw APIError.invalidURL
         }
         
-        print("Sending delete request for clip: \(id)")
+        Logger.debug("Sending delete request for clip: \(id)")
         
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
@@ -431,11 +434,11 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
         
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
-            print("Invalid response: \(response)")
+            Logger.error("Invalid response: \(response)")
             throw APIError.invalidResponse
         }
         
-        print("Successfully deleted clip \(id)")
+        Logger.debug("Successfully deleted clip \(id)")
     }
     
     func clearClips() async throws {
@@ -445,7 +448,7 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
             throw APIError.invalidURL
         }
         
-        print("Sending clear all clips request")
+        Logger.debug("Sending clear all clips request")
         
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
@@ -455,10 +458,10 @@ class APIClient: NSObject, URLSessionWebSocketDelegate {
         
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
-            print("Invalid response: \(response)")
+            Logger.error("Invalid response: \(response)")
             throw APIError.invalidResponse
         }
         
-        print("Successfully cleared all clips")
+        Logger.debug("Successfully cleared all clips")
     }
 }

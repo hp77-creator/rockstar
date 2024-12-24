@@ -9,6 +9,7 @@ struct SettingsView: View {
     @AppStorage(UserDefaultsKeys.obsidianSyncInterval) private var obsidianSyncInterval: Int = 5
     @AppStorage(UserDefaultsKeys.playSoundOnCopy) private var playSoundOnCopy: Bool = false
     @AppStorage(UserDefaultsKeys.selectedSound) private var selectedSound: String = SystemSound.tink.rawValue
+    @AppStorage(UserDefaultsKeys.debugEnabled) private var debugEnabled: Bool = false
     
     @Environment(\.dismiss) var dismiss
     @State private var showFeedback = false
@@ -118,6 +119,24 @@ struct SettingsView: View {
                     }
                 } header: {
                     Text("Obsidian Integration")
+                }
+                
+                // Debug Settings
+                Section {
+                    Toggle("Enable Debug Logging", isOn: $debugEnabled)
+                        .help("Enable detailed logging for troubleshooting")
+                        .onChange(of: debugEnabled) { oldValue, newValue in
+                            withAnimation {
+                                showFeedback = true
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    showFeedback = false
+                                }
+                            }
+                            // Restart Go service to apply debug setting
+                            NotificationCenter.default.post(name: NSNotification.Name("RestartGoService"), object: nil)
+                        }
+                } header: {
+                    Text("Debug")
                 }
             }
             .formStyle(.grouped)

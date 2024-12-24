@@ -11,9 +11,11 @@ import (
 	"github.com/progrium/darwinkit/macos/appkit"
 )
 
+var debugMode = os.Getenv("DEBUG") == "1"
+
 func debugLog(format string, args ...interface{}) {
-	if os.Getenv("CLIPBOARD_DEBUG") != "" {
-		fmt.Printf(format, args...)
+	if debugMode {
+		fmt.Printf("[DEBUG] "+format, args...)
 	}
 }
 
@@ -272,9 +274,9 @@ func (m *DarwinMonitor) checkForChanges() {
 			types := m.pasteboard.Types()
 			m.mutex.Unlock()
 
-			// Debug: Print all pasteboard types
-			if os.Getenv("CLIPBOARD_DEBUG") != "" {
-				debugLog("Debug: Available pasteboard types:\n")
+			// Print all pasteboard types in debug mode
+			if debugMode {
+				debugLog("Available pasteboard types:\n")
 				for _, t := range types {
 					m.mutex.Lock()
 					val := m.pasteboard.StringForType(t)
