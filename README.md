@@ -53,11 +53,13 @@ The application is built with a hybrid architecture:
 - macOS 12.0 or later
 - [Download the latest release](https://github.com/yourusername/clipboard-manager/releases)
 
-### Setup
-1. Download and extract the latest release
-2. Move ClipboardManager.app to your Applications folder
+### Quick Setup
+1. Download and mount the DMG file
+2. Drag ClipboardManager.app to your Applications folder
 3. Launch the app - it will appear in your menu bar
 4. Grant necessary permissions when prompted
+
+For detailed installation instructions and developer guide for creating releases, see [INSTALL.md](INSTALL.md).
 
 ## Development
 
