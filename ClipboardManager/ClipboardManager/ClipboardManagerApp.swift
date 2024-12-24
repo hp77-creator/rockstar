@@ -12,7 +12,7 @@ class AppCoordinator: ObservableObject {
     }
     
     func setup(appState: AppState, hotKeyManager: HotKeyManager) {
-        print("🔍 AppCoordinator setup starting")
+        Logger.debug("AppCoordinator setup starting")
         self.hotKeyManager = hotKeyManager
         self.appState = appState
         
@@ -22,7 +22,7 @@ class AppCoordinator: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak appState] _ in
-            print("Application will terminate, cleaning up...")
+            Logger.debug("Application will terminate, cleaning up...")
             hotKeyManager.unregister()
             appState?.cleanup()
         }
@@ -39,7 +39,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var coordinator: AppCoordinator?
     
     func applicationDidFinishLaunching(_ notification: Notification) {
-        print("🔍 App launching")
+        Logger.debug("App launching")
         
         // Set as regular app first to ensure proper event handling
         NSApp.setActivationPolicy(.regular)
@@ -52,18 +52,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Then switch to accessory mode (menu bar app without dock icon)
             NSApp.setActivationPolicy(.accessory)
             
-            print("🔍 App activation policy set to accessory")
-            print("🔍 App activation state: \(NSApp.isActive)")
-            print("🔍 App responds to events: \(NSApp.isRunning)")
+            Logger.debug("App activation policy set to accessory")
+            Logger.debug("App activation state: \(NSApp.isActive)")
+            Logger.debug("App responds to events: \(NSApp.isRunning)")
         }
     }
     
     func applicationDidBecomeActive(_ notification: Notification) {
-        print("🔍 App did become active")
+        Logger.debug("App did become active")
     }
     
     func applicationDidResignActive(_ notification: Notification) {
-        print("🔍 App did resign active")
+        Logger.debug("App did resign active")
     }
 }
 
@@ -76,7 +76,13 @@ struct ClipboardManagerApp: App {
     @State private var showingSettings = false
     
     init() {
-        print("ClipboardManagerApp initializing...")
+        Logger.debug("ClipboardManagerApp initializing...")
+        
+        // Disable accessibility logs in Release builds
+        #if !DEBUG
+        UserDefaults.standard.set(false, forKey: "_UIAccessibilityEnabled")
+        UserDefaults.standard.set(false, forKey: "UIAccessibilityEnabled")
+        #endif
     }
     
     var body: some Scene {
@@ -198,7 +204,7 @@ struct ClipboardManagerApp: App {
                 
                 VStack(spacing: 2) {
                     Button("Quit Clipboard Manager (⌘Q)") {
-                        print("Quit button pressed")
+                        Logger.debug("Quit button pressed")
                         self.appState.cleanup()
                         NSApplication.shared.terminate(nil)
                     }

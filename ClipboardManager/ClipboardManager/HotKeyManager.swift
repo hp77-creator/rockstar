@@ -28,31 +28,32 @@ class HotKeyManager: ObservableObject {
     }
     
     private func checkAccessibilityPermissions() {
+        #if DEBUG
         // Debug logging for app identification
-        print("=== Accessibility Check ===")
-        
-        // Get bundle info
         let bundle = Bundle.main
         let bundleID = bundle.bundleIdentifier ?? "unknown"
         let bundlePath = bundle.bundlePath
         let executablePath = bundle.executablePath ?? "unknown"
         let processPath = ProcessInfo.processInfo.processName
         
-        print("Bundle Info:")
-        print("- Bundle ID: \(bundleID)")
-        print("- Bundle Path: \(bundlePath)")
-        print("- Executable Path: \(executablePath)")
-        print("- Process Name: \(processPath)")
-        
-        // Check if app is running from Xcode
         let environment = ProcessInfo.processInfo.environment
         let isRunningFromXcode = environment["XPC_SERVICE_NAME"]?.contains("com.apple.dt.Xcode") ?? false
         let isDevelopment = environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
         
-        print("\nEnvironment:")
-        print("- Running from Xcode: \(isRunningFromXcode)")
-        print("- Running for Previews: \(isDevelopment)")
-        print("- XPC Service: \(environment["XPC_SERVICE_NAME"] ?? "none")")
+        Logger.debug("""
+        === Accessibility Check ===
+        Bundle Info:
+        - Bundle ID: \(bundleID)
+        - Bundle Path: \(bundlePath)
+        - Executable Path: \(executablePath)
+        - Process Name: \(processPath)
+        
+        Environment:
+        - Running from Xcode: \(isRunningFromXcode)
+        - Running for Previews: \(isDevelopment)
+        - XPC Service: \(environment["XPC_SERVICE_NAME"] ?? "none")
+        """)
+        #endif
         
         // Check permissions using both methods
         let trusted = AXIsProcessTrusted()
@@ -61,9 +62,13 @@ class HotKeyManager: ObservableObject {
             return AXIsProcessTrustedWithOptions(options as CFDictionary)
         }()
         
-        print("\nPermission Status:")
-        print("- AXIsProcessTrusted: \(trusted)")
-        print("- AXIsProcessTrustedWithOptions: \(trustedWithOptions)")
+        #if DEBUG
+        Logger.debug("""
+        Permission Status:
+        - AXIsProcessTrusted: \(trusted)
+        - AXIsProcessTrustedWithOptions: \(trustedWithOptions)
+        """)
+        #endif
         
         // Check if the app is properly signed
         let isAppSigned = {
@@ -82,38 +87,44 @@ class HotKeyManager: ObservableObject {
             return false
         }()
         
-        print("- App is signed: \(isAppSigned)")
+        #if DEBUG
+        Logger.debug("App is signed: \(isAppSigned)")
+        #endif
         
         // Use the most permissive result
         let newPermissionStatus = trusted || trustedWithOptions
         
         // Only update if status changed
         if hasAccessibilityPermissions != newPermissionStatus {
-            print("\nPermission status changed: \(newPermissionStatus)")
+            Logger.debug("Permission status changed: \(newPermissionStatus)")
             DispatchQueue.main.async {
                 self.hasAccessibilityPermissions = newPermissionStatus
                 if newPermissionStatus {
                     // Try registering again if we have appState
                     if let appState = self.appState {
-                        print("Attempting to register hotkey after permission granted")
+                        Logger.debug("Attempting to register hotkey after permission granted")
                         self.register(appState: appState)
                     }
                 } else {
                     // Unregister if permissions were revoked
                     if self.isRegistered {
-                        print("Unregistering hotkey after permission revoked")
+                        Logger.debug("Unregistering hotkey after permission revoked")
                         self.unregister()
                     }
                 }
             }
         }
         
-        print("\nFinal Permission Status: \(hasAccessibilityPermissions)")
-        print("========================")
+        #if DEBUG
+        Logger.debug("""
+        Final Permission Status: \(hasAccessibilityPermissions)
+        ========================
+        """)
+        #endif
     }
     
     func forcePermissionCheck() {
-        print("Forcing permission check...")
+        Logger.debug("Forcing permission check...")
         // First unregister any existing hotkey
         unregister()
         
@@ -131,24 +142,29 @@ class HotKeyManager: ObservableObject {
     }
     
     func register(appState: AppState) {
-        print("🔍 Starting registration with appState: \(String(describing: appState))")
+        #if DEBUG
+        Logger.debug("Starting registration with appState: \(String(describing: appState))")
+        #endif
         
         // Store appState even if we can't register yet
         self.appState = appState
-        print("🔍 Stored appState: \(String(describing: self.appState))")
+        
+        #if DEBUG
+        Logger.debug("Stored appState: \(String(describing: self.appState))")
+        #endif
         
         // Check permissions first
         checkAccessibilityPermissions()
         
         // Don't register if already registered
         guard !isRegistered else {
-            print("🔍 HotKey already registered. Current appState: \(String(describing: self.appState))")
+            Logger.debug("HotKey already registered. Current appState: \(String(describing: self.appState))")
             return
         }
         
         // Ensure we have accessibility permissions
         guard hasAccessibilityPermissions else {
-            print("No accessibility permissions, requesting...")
+            Logger.debug("No accessibility permissions, requesting...")
             forcePermissionCheck()
             return
         }
@@ -158,7 +174,7 @@ class HotKeyManager: ObservableObject {
         hotKeyID.signature = OSType("CLIP".fourCharCodeValue)
         hotKeyID.id = 1
         
-        print("Registering event handler...")
+        Logger.debug("Registering event handler...")
         
         // Register event handler
         var eventType = EventTypeSpec()
@@ -167,14 +183,14 @@ class HotKeyManager: ObservableObject {
         
         // Create event handler function
         let handler: EventHandlerProcPtr = { (_, event, _) -> OSStatus in
-            print("🎯 Event handler called!")
+            Logger.debug("Event handler called!")
             
             guard let event = event else {
-                print("❌ No event received")
+                Logger.debug("No event received")
                 return noErr
             }
             
-            print("✅ Event received")
+            Logger.debug("Event received")
             
             var hotKeyID = EventHotKeyID()
             let err = GetEventParameter(
@@ -188,26 +204,30 @@ class HotKeyManager: ObservableObject {
             )
             
             if err == noErr {
-                print("✅ HotKey ID received: \(hotKeyID.id)")
-                print("🔍 Signature: \(hotKeyID.signature)")
-                
                 // Use shared instance directly
                 let manager = HotKeyManager.shared
-                print("✅ Using shared manager instance")
-                print("🔍 AppState: \(String(describing: manager.appState))")
+                
+                #if DEBUG
+                Logger.debug("""
+                HotKey ID received: \(hotKeyID.id)
+                Signature: \(hotKeyID.signature)
+                Using shared manager instance
+                AppState: \(String(describing: manager.appState))
+                """)
+                #endif
                 
                 if let appState = manager.appState {
-                    print("✅ Got appState")
-                    print("🎯 Triggering panel toggle")
+                    #if DEBUG
+                    Logger.debug("Got appState, triggering panel toggle")
+                    #endif
                     DispatchQueue.main.async {
                         PanelWindowManager.togglePanel(with: appState)
                     }
                 } else {
-                    print("❌ AppState is nil")
+                    Logger.debug("AppState is nil")
                 }
             } else {
-                print("❌ Failed to get hot key ID: \(err)")
-                print("🔍 Error details: \(err)")
+                Logger.error("Failed to get hot key ID: \(err)")
             }
             
             return noErr
@@ -218,7 +238,9 @@ class HotKeyManager: ObservableObject {
         
         // Retain self before installation
         selfPtr = Unmanaged.passRetained(self).toOpaque()
-        print("🔍 Self pointer created: \(String(describing: selfPtr))")
+        #if DEBUG
+        Logger.debug("Self pointer created: \(String(describing: selfPtr))")
+        #endif
         
         let status = InstallEventHandler(
             GetApplicationEventTarget(),
@@ -228,14 +250,20 @@ class HotKeyManager: ObservableObject {
             selfPtr,
             &eventHandler
         )
-        print("🔍 Event handler installation status: \(status)")
+        #if DEBUG
+        Logger.debug("Event handler installation status: \(status)")
+        #endif
         
         if status == noErr {
             // Register Cmd+Shift+V
-            print("🔑 Attempting to register Cmd+Shift+V hotkey")
-            print("🔍 Key code: \(kVK_ANSI_V)")
-            print("🔍 Modifiers: \(cmdKey | shiftKey)")
-            print("🔍 Target: \(String(describing: GetApplicationEventTarget()))")
+            #if DEBUG
+            Logger.debug("""
+            Attempting to register Cmd+Shift+V hotkey
+            Key code: \(kVK_ANSI_V)
+            Modifiers: \(cmdKey | shiftKey)
+            Target: \(String(describing: GetApplicationEventTarget()))
+            """)
+            #endif
             
             let status = RegisterEventHotKey(
                 UInt32(kVK_ANSI_V),
@@ -246,19 +274,27 @@ class HotKeyManager: ObservableObject {
                 &hotKeyRef
             )
             
-            print("🔍 Registration status: \(status)")
+            #if DEBUG
+            Logger.debug("Registration status: \(status)")
+            #endif
             
             if status == noErr {
                 isRegistered = true
-                print("HotKey registered successfully")
-                print("- Key: V (keycode: \(kVK_ANSI_V))")
-                print("- Modifiers: Command + Shift")
-                print("- ID: \(hotKeyID.id)")
-                print("- Signature: \(hotKeyID.signature)")
+                #if DEBUG
+                Logger.debug("""
+                HotKey registered successfully
+                - Key: V (keycode: \(kVK_ANSI_V))
+                - Modifiers: Command + Shift
+                - ID: \(hotKeyID.id)
+                - Signature: \(hotKeyID.signature)
+                """)
+                #endif
             } else {
                 isRegistered = false
-                print("Failed to register hotkey")
-                print("- Status: \(status)")
+                Logger.error("""
+                Failed to register hotkey
+                - Status: \(status)
+                """)
                 
                 // Clean up
                 if let ptr = selfPtr {
@@ -267,12 +303,12 @@ class HotKeyManager: ObservableObject {
                 }
             }
         } else {
-            print("Failed to install event handler: \(status)")
+            Logger.error("Failed to install event handler: \(status)")
         }
     }
     
     func unregister() {
-        print("Unregistering hotkey...")
+        Logger.debug("Unregistering hotkey...")
         
         // Clean up event handler
         if let handler = eventHandler {
@@ -293,7 +329,7 @@ class HotKeyManager: ObservableObject {
         }
         
         isRegistered = false
-        print("HotKey unregistered and cleaned up")
+        Logger.debug("HotKey unregistered and cleaned up")
     }
     
     deinit {
