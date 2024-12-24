@@ -5,11 +5,8 @@ import AppKit
 struct ClipboardHistoryView: View {
     @State private var showToast = false
     @State private var searchText = ""
-    @State private var isSearching = false
-    @State private var searchTask: Task<Void, Never>?
+    @State private var searchState = SearchState.initial()
     @State private var hasInitialized = false
-    @State private var currentPage = 0
-    @State private var hasMoreContent = true
     @State private var isLoadingMore = false
     @State private var showDeleteConfirmation = false
     @State private var clipToDelete: ClipboardItem?
@@ -20,6 +17,7 @@ struct ClipboardHistoryView: View {
     @Binding var selectedIndex: Int
     
     private let pageSize = 20
+    private let searchManager = SearchManager()
     
     init(isInPanel: Bool = false, selectedIndex: Binding<Int> = .constant(0)) {
         self.isInPanel = isInPanel
@@ -34,12 +32,12 @@ struct ClipboardHistoryView: View {
             let newClips = try await appState.apiClient.getClips(offset: page * pageSize, limit: pageSize)
             await MainActor.run {
                 if page == 0 {
-                    appState.clips = newClips
+                    searchState.clips = newClips
                 } else {
-                    appState.clips.append(contentsOf: newClips)
+                    searchState.clips.append(contentsOf: newClips)
                 }
-                hasMoreContent = newClips.count == pageSize
-                currentPage = page
+                searchState.hasMoreContent = newClips.count == pageSize
+                searchState.currentPage = page
                 isLoadingMore = false
             }
         } catch {
@@ -51,86 +49,33 @@ struct ClipboardHistoryView: View {
     }
     
     private func loadMoreContentIfNeeded(currentItem item: ClipboardItem) {
-        let thresholdIndex = appState.clips.index(appState.clips.endIndex, offsetBy: -5)
-        if let itemIndex = appState.clips.firstIndex(where: { $0.id == item.id }),
+        let thresholdIndex = searchState.clips.index(searchState.clips.endIndex, offsetBy: -5)
+        if let itemIndex = searchState.clips.firstIndex(where: { $0.id == item.id }),
            itemIndex == thresholdIndex {
             Task {
-                await loadPage(currentPage + 1)
+                await loadPage(searchState.currentPage + 1)
             }
         }
     }
     
-    private func handleSearch(_ query: String) {
+    private func handleSearch(_ query: String) async {
         guard hasInitialized else {
             hasInitialized = true
             return
         }
         
-        searchTask?.cancel()
+        searchState.isSearching = true
+        let result = await searchManager.search(
+            query: query,
+            in: appState.clips,
+            apiClient: appState.apiClient
+        )
         
-        if query.isEmpty {
-            Task {
-                isSearching = false
-                currentPage = 0
-                hasMoreContent = true
-                await loadPage(0)
-            }
-        } else {
-            searchTask = Task {
-                isSearching = true
-                try? await Task.sleep(nanoseconds: 300_000_000) // 300ms delay
-                
-                if !Task.isCancelled {
-                    let searchTerm = query.lowercased()
-                    let localResults = appState.clips.filter { clip in
-                        if let text = clip.contentString?.lowercased(),
-                           text.contains(searchTerm) {
-                            return true
-                        }
-                        if let sourceApp = clip.metadata.sourceApp?.lowercased(),
-                           sourceApp.contains(searchTerm) {
-                            return true
-                        }
-                        if let category = clip.metadata.category?.lowercased(),
-                           category.contains(searchTerm) {
-                            return true
-                        }
-                        if let tags = clip.metadata.tags,
-                           tags.contains(where: { $0.lowercased().contains(searchTerm) }) {
-                            return true
-                        }
-                        return false
-                    }
-                    
-                    if !Task.isCancelled {
-                        if !localResults.isEmpty {
-                            await MainActor.run {
-                                appState.clips = localResults
-                                isSearching = false
-                            }
-                        } else {
-                            do {
-                                let results = try await appState.apiClient.searchClips(
-                                    query: query,
-                                    offset: 0,
-                                    limit: pageSize
-                                )
-                                if !Task.isCancelled {
-                                    await MainActor.run {
-                                        appState.clips = results
-                                        hasMoreContent = results.count == pageSize
-                                        currentPage = 0
-                                    }
-                                }
-                            } catch {
-                                print("Search error: \(error)")
-                            }
-                            
-                            await MainActor.run {
-                                isSearching = false
-                            }
-                        }
-                    }
+        await MainActor.run {
+            result.updateState(&searchState)
+            if case .resetToInitial = result {
+                Task {
+                    await loadPage(0)
                 }
             }
         }
@@ -142,9 +87,13 @@ struct ClipboardHistoryView: View {
             SearchBar(
                 searchText: $searchText,
                 onClearAll: { showClearConfirmation = true },
-                isEnabled: !appState.clips.isEmpty
+                isEnabled: !searchState.clips.isEmpty
             )
-            .onChange(of: searchText, perform: handleSearch)
+            .onChange(of: searchText) { newValue in
+                Task {
+                    await handleSearch(newValue)
+                }
+            }
             
             // Debug status
             if appState.isDebugMode && !isInPanel {
@@ -156,19 +105,19 @@ struct ClipboardHistoryView: View {
             
             // Main content
             Group {
-                if isSearching {
+                if searchState.isSearching {
                     LoadingView(message: "Searching...")
-                } else if appState.isLoading && appState.clips.isEmpty {
+                } else if appState.isLoading && searchState.clips.isEmpty {
                     LoadingView(message: "Loading clips...")
-                } else if appState.clips.isEmpty {
+                } else if searchState.clips.isEmpty {
                     EmptyStateView(isServiceRunning: appState.isServiceRunning)
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(Array(appState.clips.enumerated()), id: \.offset) { index, clip in
+                            ForEach(Array(searchState.clips.enumerated()), id: \.offset) { index, clip in
                                 ClipboardItemView(
                                     item: clip,
-                                    isSelected: index == selectedIndex,
+                                    isSelected: index == searchState.selectedIndex,
                                     onDelete: {
                                         withAnimation {
                                             clipToDelete = clip
@@ -188,13 +137,13 @@ struct ClipboardHistoryView: View {
                                     }
                                 }
                                 .help("Click to copy, then use Cmd+V to paste")
-                                .background(index == selectedIndex ? Color.blue.opacity(0.2) : Color.clear)
+                                .background(index == searchState.selectedIndex ? Color.blue.opacity(0.2) : Color.clear)
                                 .onAppear {
                                     loadMoreContentIfNeeded(currentItem: clip)
                                 }
                             }
                             
-                            if isLoadingMore && hasMoreContent {
+                            if isLoadingMore && searchState.hasMoreContent {
                                 ProgressView()
                                     .progressViewStyle(.circular)
                                     .scaleEffect(0.8)
