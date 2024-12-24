@@ -26,7 +26,7 @@ struct ClipboardItemView: View {
                 HStack {
                     if let sourceApp = item.metadata.sourceApp {
                         HStack(spacing: 4) {
-                            Image(systemName: "app.circle.fill")
+                            Image(systemName: "app.badge")
                                 .foregroundColor(.secondary)
                             Text(sourceApp)
                         }

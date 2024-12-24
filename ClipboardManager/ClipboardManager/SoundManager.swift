@@ -29,26 +29,26 @@ public class SoundManager {
         // Try to load all system sounds
         for soundType in SystemSound.allCases {
             if let sound = NSSound(named: soundType.rawValue) {
-                print("Successfully loaded \(soundType.rawValue) sound")
+                Logger.debug("Successfully loaded \(soundType.rawValue) sound")
                 sound.volume = 0.3  // Moderate volume for clear feedback
                 sounds[soundType] = sound
             } else {
-                print("Failed to load \(soundType.rawValue) sound")
+                Logger.debug("Failed to load \(soundType.rawValue) sound")
             }
         }
     }
     
     public func playCopySound() {
         let shouldPlaySound = UserDefaults.standard.bool(forKey: UserDefaultsKeys.playSoundOnCopy)
-        print("Should play sound: \(shouldPlaySound)")
+        Logger.debug("Should play sound: \(shouldPlaySound)")
         if shouldPlaySound {
             let selectedSound = UserDefaults.standard.string(forKey: UserDefaultsKeys.selectedSound) ?? SystemSound.tink.rawValue
             if let soundType = SystemSound(rawValue: selectedSound),
                let sound = sounds[soundType] {
-                print("Playing \(soundType.rawValue) sound")
+                Logger.debug("Playing \(soundType.rawValue) sound")
                 sound.play()
             } else {
-                print("Playing fallback sound")
+                Logger.debug("Playing fallback sound")
                 NSSound.beep()
             }
         }

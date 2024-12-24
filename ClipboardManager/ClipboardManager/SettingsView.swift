@@ -22,7 +22,7 @@ struct SettingsView: View {
                     Toggle("Play sound on copy", isOn: $playSoundOnCopy)
                         .help("Play a notification sound when text is copied")
                         .onChange(of: playSoundOnCopy) { oldValue, newValue in
-                            print("Sound setting changed to: \(newValue)")
+                            Logger.debug("Sound setting changed to: \(newValue)")
                             withAnimation {
                                 showFeedback = true
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -31,7 +31,7 @@ struct SettingsView: View {
                             }
                             // Play test sound when enabled
                             if newValue {
-                                print("Playing test sound")
+                                Logger.debug("Playing test sound")
                                 SoundManager.shared.playCopySound()
                             }
                         }
@@ -212,7 +212,7 @@ struct SettingsView: View {
                         }
                     }
                 } else {
-                    print("Failed to create security-scoped bookmark")
+                    Logger.debug("Failed to create security-scoped bookmark")
                 }
             }
         }
