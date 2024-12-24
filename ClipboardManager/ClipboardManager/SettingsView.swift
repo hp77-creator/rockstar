@@ -23,7 +23,7 @@ struct SettingsView: View {
                         TextField("", value: $maxClipsShown, formatter: NumberFormatter())
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 60)
-                            .onChange(of: maxClipsShown) { newValue in
+                            .onChange(of: maxClipsShown) { oldValue, newValue in
                                 // Ensure value stays within bounds
                                 if newValue < 5 {
                                     maxClipsShown = 5
@@ -87,7 +87,7 @@ struct SettingsView: View {
                     .transition(.opacity)
             }
         }
-        .onChange(of: obsidianEnabled) { _ in
+                            .onChange(of: obsidianEnabled) { oldValue, newValue in
             withAnimation {
                 showFeedback = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -97,7 +97,7 @@ struct SettingsView: View {
             // Restart Go service to apply Obsidian settings
             NotificationCenter.default.post(name: NSNotification.Name("RestartGoService"), object: nil)
         }
-        .onChange(of: obsidianVaultPath) { _ in
+                            .onChange(of: obsidianVaultPath) { oldValue, newValue in
             withAnimation {
                 showFeedback = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -107,7 +107,7 @@ struct SettingsView: View {
             // Restart Go service to apply Obsidian settings
             NotificationCenter.default.post(name: NSNotification.Name("RestartGoService"), object: nil)
         }
-        .onChange(of: obsidianSyncInterval) { _ in
+                            .onChange(of: obsidianSyncInterval) { oldValue, newValue in
             withAnimation {
                 showFeedback = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {

@@ -6,7 +6,7 @@ class HotKeyManager: ObservableObject {
     static let shared = HotKeyManager()
     private var eventHandler: EventHandlerRef?
     private var hotKeyRef: EventHotKeyRef?
-    fileprivate weak var appState: AppState?
+    fileprivate var appState: AppState?
     private var selfPtr: UnsafeMutableRawPointer?
     private var handlerUPP: EventHandlerProcPtr?
     private var permissionCheckTimer: Timer?
@@ -131,15 +131,18 @@ class HotKeyManager: ObservableObject {
     }
     
     func register(appState: AppState) {
+        print("🔍 Starting registration with appState: \(String(describing: appState))")
+        
         // Store appState even if we can't register yet
         self.appState = appState
+        print("🔍 Stored appState: \(String(describing: self.appState))")
         
         // Check permissions first
         checkAccessibilityPermissions()
         
         // Don't register if already registered
         guard !isRegistered else {
-            print("HotKey already registered")
+            print("🔍 HotKey already registered. Current appState: \(String(describing: self.appState))")
             return
         }
         
@@ -162,20 +165,16 @@ class HotKeyManager: ObservableObject {
         eventType.eventClass = OSType(kEventClassKeyboard)
         eventType.eventKind = OSType(kEventHotKeyPressed)
         
-        // Install handler
-        selfPtr = Unmanaged.passRetained(self).toOpaque()
-        
         // Create event handler function
-        let handler: EventHandlerProcPtr = { [weak self] (_, event, userData) -> OSStatus in
+        let handler: EventHandlerProcPtr = { (_, event, _) -> OSStatus in
+            print("🎯 Event handler called!")
+            
             guard let event = event else {
-                print("No event received")
+                print("❌ No event received")
                 return noErr
             }
             
-            guard let context = userData else {
-                print("No user data received")
-                return noErr
-            }
+            print("✅ Event received")
             
             var hotKeyID = EventHotKeyID()
             let err = GetEventParameter(
@@ -189,18 +188,26 @@ class HotKeyManager: ObservableObject {
             )
             
             if err == noErr {
-                print("HotKey ID received: \(hotKeyID.id)")
-                if let manager = Unmanaged<HotKeyManager>.fromOpaque(context).takeUnretainedValue() as? HotKeyManager,
-                   let appState = manager.appState {
-                    print("Triggering panel toggle")
+                print("✅ HotKey ID received: \(hotKeyID.id)")
+                print("🔍 Signature: \(hotKeyID.signature)")
+                
+                // Use shared instance directly
+                let manager = HotKeyManager.shared
+                print("✅ Using shared manager instance")
+                print("🔍 AppState: \(String(describing: manager.appState))")
+                
+                if let appState = manager.appState {
+                    print("✅ Got appState")
+                    print("🎯 Triggering panel toggle")
                     DispatchQueue.main.async {
                         PanelWindowManager.togglePanel(with: appState)
                     }
                 } else {
-                    print("Failed to get manager or appState")
+                    print("❌ AppState is nil")
                 }
             } else {
-                print("Failed to get hot key ID: \(err)")
+                print("❌ Failed to get hot key ID: \(err)")
+                print("🔍 Error details: \(err)")
             }
             
             return noErr
@@ -208,6 +215,11 @@ class HotKeyManager: ObservableObject {
         
         // Store handler and install it
         handlerUPP = handler
+        
+        // Retain self before installation
+        selfPtr = Unmanaged.passRetained(self).toOpaque()
+        print("🔍 Self pointer created: \(String(describing: selfPtr))")
+        
         let status = InstallEventHandler(
             GetApplicationEventTarget(),
             handler,
@@ -216,9 +228,15 @@ class HotKeyManager: ObservableObject {
             selfPtr,
             &eventHandler
         )
+        print("🔍 Event handler installation status: \(status)")
         
         if status == noErr {
             // Register Cmd+Shift+V
+            print("🔑 Attempting to register Cmd+Shift+V hotkey")
+            print("🔍 Key code: \(kVK_ANSI_V)")
+            print("🔍 Modifiers: \(cmdKey | shiftKey)")
+            print("🔍 Target: \(String(describing: GetApplicationEventTarget()))")
+            
             let status = RegisterEventHotKey(
                 UInt32(kVK_ANSI_V),
                 UInt32(cmdKey | shiftKey),
@@ -227,6 +245,8 @@ class HotKeyManager: ObservableObject {
                 OptionBits(0),
                 &hotKeyRef
             )
+            
+            print("🔍 Registration status: \(status)")
             
             if status == noErr {
                 isRegistered = true

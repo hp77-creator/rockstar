@@ -1,53 +1,82 @@
 import SwiftUI
 import AppKit
 
+// Coordinator to handle app lifecycle and state
+class AppCoordinator: ObservableObject {
+    private var observers: [NSObjectProtocol] = []
+    private var hotKeyManager: HotKeyManager?
+    private var appState: AppState?
+    
+    deinit {
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
+    }
+    
+    func setup(appState: AppState, hotKeyManager: HotKeyManager) {
+        print("🔍 AppCoordinator setup starting")
+        self.hotKeyManager = hotKeyManager
+        self.appState = appState
+        
+        // Set up termination notification observer
+        let terminationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak appState] _ in
+            print("Application will terminate, cleaning up...")
+            hotKeyManager.unregister()
+            appState?.cleanup()
+        }
+        
+        // Store observers for cleanup
+        observers.append(terminationObserver)
+        
+        // Register hotkey
+        hotKeyManager.register(appState: appState)
+    }
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate {
+    var coordinator: AppCoordinator?
+    
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        print("🔍 App launching")
+        
+        // Set as regular app first to ensure proper event handling
+        NSApp.setActivationPolicy(.regular)
+        
+        // Enable background operation
+        NSApp.activate(ignoringOtherApps: true)
+        
+        // Wait a bit to ensure event handling is set up
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            // Then switch to accessory mode (menu bar app without dock icon)
+            NSApp.setActivationPolicy(.accessory)
+            
+            print("🔍 App activation policy set to accessory")
+            print("🔍 App activation state: \(NSApp.isActive)")
+            print("🔍 App responds to events: \(NSApp.isRunning)")
+        }
+    }
+    
+    func applicationDidBecomeActive(_ notification: Notification) {
+        print("🔍 App did become active")
+    }
+    
+    func applicationDidResignActive(_ notification: Notification) {
+        print("🔍 App did resign active")
     }
 }
 
 @main
 struct ClipboardManagerApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    private let app = NSApplication.shared
     @StateObject private var appState = AppState()
     @StateObject private var hotKeyManager = HotKeyManager.shared
+    @StateObject private var coordinator = AppCoordinator()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var showingSettings = false
-    
-    // Use a class-based coordinator to handle lifecycle
-    private class AppCoordinator {
-        private var observers: [NSObjectProtocol] = []
-        
-        deinit {
-            observers.forEach { NotificationCenter.default.removeObserver($0) }
-        }
-        
-        func setup(appState: AppState, hotKeyManager: HotKeyManager) {
-            // Set up termination notification observer
-            let terminationObserver = NotificationCenter.default.addObserver(
-                forName: NSApplication.willTerminateNotification,
-                object: nil,
-                queue: .main
-            ) { [weak appState] _ in
-                print("Application will terminate, cleaning up...")
-                hotKeyManager.unregister()
-                appState?.cleanup()
-            }
-            
-            // Store observers for cleanup
-            observers.append(terminationObserver)
-            
-            // Initial registration attempt
-            hotKeyManager.register(appState: appState)
-        }
-    }
-    
-    private let coordinator = AppCoordinator()
     
     init() {
         print("ClipboardManagerApp initializing...")
-        coordinator.setup(appState: appState, hotKeyManager: HotKeyManager.shared)
     }
     
     var body: some Scene {
@@ -75,7 +104,7 @@ struct ClipboardManagerApp: App {
                         .buttonStyle(.borderedProminent)
                         
                         Button("Force Permission Check") {
-                            hotKeyManager.forcePermissionCheck()
+                            self.hotKeyManager.forcePermissionCheck()
                         }
                         .buttonStyle(.borderless)
                         .foregroundColor(.blue)
@@ -124,7 +153,7 @@ struct ClipboardManagerApp: App {
                             .multilineTextAlignment(.center)
                         
                         Button("Retry Connection (⌘R)") {
-                            appState.startGoService()
+                            self.appState.startGoService()
                         }
                         .buttonStyle(.borderless)
                         .foregroundColor(.blue)
@@ -170,7 +199,7 @@ struct ClipboardManagerApp: App {
                 VStack(spacing: 2) {
                     Button("Quit Clipboard Manager (⌘Q)") {
                         print("Quit button pressed")
-                        appState.cleanup()
+                        self.appState.cleanup()
                         NSApplication.shared.terminate(nil)
                     }
                     .buttonStyle(.borderless)
@@ -186,6 +215,11 @@ struct ClipboardManagerApp: App {
                 .padding(.vertical, 4)
             }
             .frame(width: 300)
+            .task {
+                // Setup coordinator when view appears
+                coordinator.setup(appState: appState, hotKeyManager: hotKeyManager)
+                appDelegate.coordinator = coordinator
+            }
         }
         .menuBarExtraStyle(.window)
     }
