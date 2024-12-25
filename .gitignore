@@ -48,3 +48,4 @@ DerivedData/
 *~
 
 node_modules
+*.dmg

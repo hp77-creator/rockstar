@@ -116,14 +116,15 @@ struct SingleClipPanelView: View {
                         resetIdleTimer()
                     }
                     return nil
-                case 36, 76: // Return key or numpad enter
-                    if !appState.clips.isEmpty {
-                        Task {
-                            do {
-                                try await appState.pasteClip(at: selectedIndex)
-                                DispatchQueue.main.async {
-                                    simulatePaste()
-                                }
+case 36, 76: // Return key or numpad enter
+    if !appState.clips.isEmpty {
+        autopasteTimer?.invalidate() // Invalidate timer to prevent double paste
+        Task {
+            do {
+                try await appState.pasteClip(at: selectedIndex)
+                DispatchQueue.main.async {
+                    simulatePaste()
+                }
                             } catch {
                                 print("Failed to paste clip: \(error)")
                             }
