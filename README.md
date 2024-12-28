@@ -54,7 +54,7 @@ The application is built with a hybrid architecture:
 
 ### Prerequisites
 - macOS 12.0 or later
-- [Download the latest release](https://github.com/yourusername/clipboard-manager/releases)
+- [Download the latest release](https://github.com/workhunters/clipboard-manager/releases)
 
 ### Quick Setup
 1. Download and mount the DMG file
