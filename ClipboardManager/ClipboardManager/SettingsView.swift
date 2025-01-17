@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import ServiceManagement
 
 struct SettingsView: View {
     @AppStorage(UserDefaultsKeys.maxClipsShown) private var maxClipsShown: Int = 10
@@ -10,6 +11,7 @@ struct SettingsView: View {
     @AppStorage(UserDefaultsKeys.playSoundOnCopy) private var playSoundOnCopy: Bool = false
     @AppStorage(UserDefaultsKeys.selectedSound) private var selectedSound: String = SystemSound.tink.rawValue
     @AppStorage(UserDefaultsKeys.debugEnabled) private var debugEnabled: Bool = false
+    @AppStorage("launchAtLogin") private var launchAtLogin = false
     
     @Environment(\.dismiss) var dismiss
     @State private var showFeedback = false
@@ -52,6 +54,7 @@ struct SettingsView: View {
                             // Play test sound when changed
                             SoundManager.shared.playCopySound()
                         }
+
                     }
                 } header: {
                     Text("Sound")
@@ -95,7 +98,6 @@ struct SettingsView: View {
                 // Obsidian Integration Settings
                 Section {
                     Toggle("Enable Obsidian Integration", isOn: $obsidianEnabled)
-                    
                     if obsidianEnabled {
                         Button(obsidianVaultPath.isEmpty ? "Select Vault Path" : "Change Vault Path") {
                             selectObsidianVaultPath()
@@ -138,8 +140,35 @@ struct SettingsView: View {
                 } header: {
                     Text("Debug")
                 }
+                // Launch at Login Settings
+                Section {
+                    Toggle("Launch at Login", isOn: $launchAtLogin)
+                        .help("Launch application automatically at login")
+                        .onChange(of: launchAtLogin) { oldValue, newValue in
+                            if newValue {
+                                try? SMAppService.mainApp.register()
+                            } else {
+                                try? SMAppService.mainApp.unregister()
+                            }
+                            
+                            withAnimation {
+                                showFeedback = true
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    showFeedback = false
+                                }
+                            }
+                        }
+                } header: {
+                    Text("Startup")
+                }
             }
             .formStyle(.grouped)
+            
+            Spacer()
+            Text("Made with ♡ by hp77")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.bottom)
             
             if showFeedback {
                 Text("Setting saved")

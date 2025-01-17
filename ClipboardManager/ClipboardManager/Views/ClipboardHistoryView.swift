@@ -16,8 +16,21 @@ struct ClipboardHistoryView: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var selectedIndex: Int
     
-    private let pageSize = 20
+    @AppStorage(UserDefaultsKeys.maxClipsShown) private var maxClipsShown: Int = 10
     private let searchManager = SearchManager()
+    
+    private func formatSize(_ bytes: Int) -> String {
+        let kb = Double(bytes) / 1024.0
+        if kb < 1024 {
+            return String(format: "%.1f KB", kb)
+        }
+        let mb = kb / 1024.0
+        return String(format: "%.1f MB", mb)
+    }
+    
+    private var totalSize: Int {
+        searchState.clips.reduce(0) { $0 + $1.content.count }
+    }
     
     init(isInPanel: Bool = false, selectedIndex: Binding<Int> = .constant(0)) {
         self.isInPanel = isInPanel
@@ -29,14 +42,14 @@ struct ClipboardHistoryView: View {
         isLoadingMore = true
         
         do {
-            let newClips = try await appState.apiClient.getClips(offset: page * pageSize, limit: pageSize)
+            let newClips = try await appState.apiClient.getClips(offset: page * maxClipsShown, limit: maxClipsShown)
             await MainActor.run {
                 if page == 0 {
                     searchState.clips = newClips
                 } else {
                     searchState.clips.append(contentsOf: newClips)
                 }
-                searchState.hasMoreContent = newClips.count == pageSize
+                searchState.hasMoreContent = newClips.count == maxClipsShown
                 searchState.currentPage = page
                 isLoadingMore = false
             }
@@ -94,6 +107,14 @@ struct ClipboardHistoryView: View {
                 Task {
                     await handleSearch(newValue)
                 }
+            }
+            
+            // Total clips count
+            if !searchState.clips.isEmpty {
+                Text("\(searchState.clips.count) clips (\(formatSize(totalSize)))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 8)
             }
             
             // Debug status
