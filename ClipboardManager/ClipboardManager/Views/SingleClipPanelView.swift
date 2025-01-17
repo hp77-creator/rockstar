@@ -5,7 +5,21 @@ struct SingleClipPanelView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.colorScheme) private var colorScheme
     @State private var selectedIndex = 0
-    @State private var autopasteTimer: Timer?
+    @State private var modifierMonitor: Any?
+    @State private var initialModifiersActive = true
+
+    private func updateClipboard() {
+        if !appState.clips.isEmpty {
+            Task {
+                do {
+                    Logger.debug("Setting clipboard content for index: \(selectedIndex)")
+                    try await appState.pasteClip(at: selectedIndex)
+                } catch {
+                    Logger.error("Failed to set clipboard: \(error)")
+                }
+            }
+        }
+    }
     
     private func simulatePaste() {
         Logger.debug("Simulating paste...")
@@ -42,30 +56,34 @@ struct SingleClipPanelView: View {
             SingleClipPanelManager.hidePanel()
         }
     }
-    
-    private func resetIdleTimer() {
-        Logger.debug("Resetting idle timer...")
-        autopasteTimer?.invalidate()
-        autopasteTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { _ in
-            Logger.debug("Idle timer fired - user has been idle for 3 seconds")
-            if !appState.clips.isEmpty {
+
+    private func startMonitoringModifiers() {
+         // Remove any existing monitor first
+        if let monitor = modifierMonitor {
+            NSEvent.removeMonitor(monitor)
+            modifierMonitor = nil
+        }
+        
+        // Start new monitor
+        modifierMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
+            let flags = event.modifierFlags
+            
+            // If both modifiers are released
+            if !flags.contains(.command) && !flags.contains(.shift) {
+                Logger.debug("Both modifiers released, initiating paste")
                 Task {
                     do {
-                        Logger.debug("Setting clipboard content...")
                         try await appState.pasteClip(at: selectedIndex)
-                        
-                        // Add a small delay to ensure clipboard is set
-                        try await Task.sleep(nanoseconds: 100_000_000) // 100ms
-                        
                         DispatchQueue.main.async {
-                            Logger.debug("Executing paste command...")
                             simulatePaste()
                         }
                     } catch {
-                        Logger.error("Failed to paste clip: \(error)")
+                        Logger.error("Failed to paste on modifier release: \(error)")
+                        SingleClipPanelManager.hidePanel()
                     }
                 }
             }
+            return event
         }
     }
     
@@ -100,33 +118,37 @@ struct SingleClipPanelView: View {
         .shadow(radius: 5)
         .onAppear {
             selectedIndex = 0
-            resetIdleTimer()
+            updateClipboard()
+            startMonitoringModifiers()
             
             NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 switch event.keyCode {
                 case 123: // Left arrow
                     if !appState.clips.isEmpty {
                         selectedIndex = max(selectedIndex - 1, 0)
-                        resetIdleTimer()
+                        updateClipboard()
                     }
                     return nil
                 case 124: // Right arrow
                     if !appState.clips.isEmpty {
                         selectedIndex = min(selectedIndex + 1, appState.clips.count - 1)
-                        resetIdleTimer()
+                        updateClipboard()
                     }
                     return nil
-case 36, 76: // Return key or numpad enter
-    if !appState.clips.isEmpty {
-        autopasteTimer?.invalidate() // Invalidate timer to prevent double paste
-        Task {
-            do {
-                try await appState.pasteClip(at: selectedIndex)
-                DispatchQueue.main.async {
-                    simulatePaste()
-                }
-                            } catch {
-                                print("Failed to paste clip: \(error)")
+                case 36, 76: // Return key or numpad enter
+                    if !appState.clips.isEmpty {
+                        let flags = event.modifierFlags
+                        if flags.contains(.command) || flags.contains(.shift) {
+                            Task {
+                                do {
+                                    try await appState.pasteClip(at: selectedIndex)
+                                    DispatchQueue.main.async {
+                                        simulatePaste()
+                                    }
+                                } catch {
+                                    Logger.error("Failed to paste clip: \(error)")
+                                    SingleClipPanelManager.hidePanel()
+                                }
                             }
                         }
                     }
@@ -142,8 +164,11 @@ case 36, 76: // Return key or numpad enter
             }
         }
         .onDisappear {
-            autopasteTimer?.invalidate()
-            autopasteTimer = nil
+            // Remove modifier monitor
+            if let monitor = modifierMonitor {
+                NSEvent.removeMonitor(monitor)
+                modifierMonitor = nil
+            }
         }
     }
 }

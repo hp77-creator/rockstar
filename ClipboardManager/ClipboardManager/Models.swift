@@ -32,12 +32,16 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
     // Memory management
     private let maxCachedClips = 100
     private var isViewActive = false
-    
     #if DEBUG
     @Published var isDebugMode = true
     #else
     @Published var isDebugMode = false
     #endif
+    
+    
+    
+    
+    
     
     init() {
         #if DEBUG
