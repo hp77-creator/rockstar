@@ -37,12 +37,7 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
     #else
     @Published var isDebugMode = false
     #endif
-    
-    
-    
-    
-    
-    
+
     init() {
         #if DEBUG
         Logger.debug("Running in DEBUG configuration")
