@@ -147,6 +147,7 @@ struct ClipboardManagerApp: App {
                     .padding(.vertical, 4)
                 }
                 
+                
                 if appState.isLoading {
                     ProgressView("Starting service...")
                         .progressViewStyle(.circular)

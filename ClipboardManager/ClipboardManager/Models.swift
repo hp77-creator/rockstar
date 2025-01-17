@@ -32,12 +32,16 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
     // Memory management
     private let maxCachedClips = 100
     private var isViewActive = false
-    
     #if DEBUG
     @Published var isDebugMode = true
     #else
     @Published var isDebugMode = false
     #endif
+    
+    
+    
+    
+    
     
     init() {
         #if DEBUG
@@ -96,8 +100,15 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
     func didReceiveNewClip(_ clip: ClipboardItem) {
         Logger.debug("New clip received: \(clip.id)")
         DispatchQueue.main.async {
-            // Insert new clip at the beginning
-            self.clips.insert(clip, at: 0)
+            // Check if content already exists
+            if let existingIndex = self.clips.firstIndex(where: {
+                $0.content == clip.content && $0.type == clip.type
+            }) {
+                let existingClip = self.clips.remove(at: existingIndex)
+                self.clips.insert(existingClip, at: 0)
+            } else {
+                self.clips.insert(clip, at: 0)
+            }
             
             // Trim cache if needed
             if self.clips.count > self.maxCachedClips {
@@ -123,6 +134,7 @@ class AppState: ObservableObject, ClipboardUpdateDelegate {
             clips = Array(clips.prefix(maxCachedClips / 2))
         }
     }
+    
     
     func startGoService() {
         isLoading = true

@@ -82,13 +82,14 @@ struct ClipboardHistoryView: View {
     }
     
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 12) {
             // Search bar
             SearchBar(
                 searchText: $searchText,
                 onClearAll: { showClearConfirmation = true },
                 isEnabled: !searchState.clips.isEmpty
             )
+            .padding(.horizontal, 8)
             .onChange(of: searchText) { newValue in
                 Task {
                     await handleSearch(newValue)
@@ -113,7 +114,7 @@ struct ClipboardHistoryView: View {
                     EmptyStateView(isServiceRunning: appState.isServiceRunning)
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 0) {
+                        LazyVStack(spacing: 8) {
                             ForEach(Array(searchState.clips.enumerated()), id: \.offset) { index, clip in
                                 ClipboardItemView(
                                     item: clip,
@@ -136,6 +137,7 @@ struct ClipboardHistoryView: View {
                                         showToast = false
                                     }
                                 }
+                                .padding(.horizontal, 12)
                                 .help("Click to copy, then use Cmd+V to paste")
                                 .background(index == searchState.selectedIndex ? Color.blue.opacity(0.2) : Color.clear)
                                 .onAppear {
@@ -155,7 +157,8 @@ struct ClipboardHistoryView: View {
                 }
             }
         }
-        .padding()
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .confirmationDialog(
             "Delete Clip",
             isPresented: $showDeleteConfirmation,
