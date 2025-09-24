@@ -3,11 +3,9 @@ package storage
 import "errors"
 
 const (
-	// Size thresholds
 	MaxInlineStorageSize = 10 * 1024 * 1024  // 10MB - store in DB
-	MaxStorageSize      = 100 * 1024 * 1024 // 100MB - max total size
-	
-	// Content types
+	MaxStorageSize       = 100 * 1024 * 1024 // 100MB - max total size
+
 	TypeText  = "text"
 	TypeImage = "image"
 	TypeFile  = "file"

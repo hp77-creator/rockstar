@@ -12,6 +12,18 @@ import (
 	"time"
 )
 
+var contentFormat = `
+## %s
+---
+source: %s
+tags: [clipboard%s]
+type: %s
+---
+
+%s
+
+`
+
 // SyncService handles syncing clipboard content to Obsidian vault
 type SyncService struct {
 	store      storage.Storage
@@ -23,7 +35,6 @@ type SyncService struct {
 
 // UpdateVaultPath updates the vault path while the service is running
 func (s *SyncService) UpdateVaultPath(path string) error {
-	// Verify new path exists
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return fmt.Errorf("new vault path does not exist: %s", path)
 	}
@@ -48,12 +59,10 @@ func New(store storage.Storage, config Config) (*SyncService, error) {
 		return nil, fmt.Errorf("vault path is required")
 	}
 
-	// Verify vault path exists
 	if _, err := os.Stat(config.VaultPath); os.IsNotExist(err) {
 		return nil, fmt.Errorf("vault path does not exist: %s", config.VaultPath)
 	}
 
-	// Validate sync interval
 	if config.SyncInterval <= 0 {
 		return nil, fmt.Errorf("sync interval must be positive, got: %v", config.SyncInterval)
 	}
@@ -70,7 +79,6 @@ func New(store storage.Storage, config Config) (*SyncService, error) {
 func (s *SyncService) Start(ctx context.Context) error {
 	log.Printf("Starting Obsidian sync service (vault: %s)", s.vaultPath)
 
-	// Perform initial sync
 	if err := s.sync(ctx); err != nil {
 		log.Printf("Initial sync error: %v", err)
 	}
@@ -104,7 +112,6 @@ func (s *SyncService) Stop() {
 	}
 	select {
 	case <-s.done:
-		// Already closed
 	default:
 		close(s.done)
 	}
@@ -126,20 +133,19 @@ func (s *SyncService) UpdateSyncInterval(interval time.Duration) {
 // sync performs the actual synchronization
 func (s *SyncService) sync(ctx context.Context) error {
 	log.Printf("Starting sync operation in vault: %s", s.vaultPath)
-	
+
 	// Get current vault path (thread-safe)
 	s.mu.RLock()
 	vaultPath := s.vaultPath
 	s.mu.RUnlock()
 
-	// Verify vault path still exists and is accessible
 	if info, err := os.Stat(vaultPath); err != nil {
 		return fmt.Errorf("vault path error: %w", err)
 	} else {
 		log.Printf("Vault path verified: %s (%s)", vaultPath, info.Mode())
 	}
-	
-	// Get unsynced clips
+
+	//TODO expose limit as an env var
 	clips, err := s.store.ListUnsynced(ctx, 100) // Adjust limit as needed
 	if err != nil {
 		return fmt.Errorf("failed to list clips: %w", err)
@@ -147,10 +153,8 @@ func (s *SyncService) sync(ctx context.Context) error {
 	log.Printf("Found %d clips to process", len(clips))
 
 	for _, clip := range clips {
-		// Process clip content
 		log.Printf("Processing clip - ID: %s, Type: %s", clip.ID, clip.Type)
-		
-		// Convert content bytes to string
+
 		content := string(clip.Content)
 		if content == "" {
 			log.Printf("Skipping empty content")
@@ -158,7 +162,6 @@ func (s *SyncService) sync(ctx context.Context) error {
 		}
 		log.Printf("Content length: %d bytes", len(content))
 
-		// Generate filename based on date
 		filename := fmt.Sprintf("%s.md", clip.CreatedAt.Format("2006-01-02"))
 		clipboardDir := filepath.Join(vaultPath, "Clipboard")
 		path := filepath.Join(clipboardDir, filename)
@@ -168,13 +171,11 @@ func (s *SyncService) sync(ctx context.Context) error {
 		log.Printf("- Clipboard dir: %s", clipboardDir)
 		log.Printf("- Full path: %s", path)
 
-		// Ensure Clipboard directory exists with proper permissions
 		if err := os.MkdirAll(clipboardDir, 0755); err != nil {
 			log.Printf("Failed to create directory: %v", err)
 			return fmt.Errorf("failed to create directory: %w", err)
 		}
 
-		// Verify directory permissions
 		if info, err := os.Stat(clipboardDir); err != nil {
 			log.Printf("Failed to verify directory: %v", err)
 			return fmt.Errorf("failed to verify directory: %w", err)
@@ -187,52 +188,35 @@ func (s *SyncService) sync(ctx context.Context) error {
 		}
 		log.Printf("Clipboard directory created/verified with write permissions")
 
-		// Get tags from metadata
 		tags := clip.Metadata.Tags
 		log.Printf("Tags: %v", tags)
 
-		// Generate entry content based on type
 		var entryContent string
 		if strings.HasPrefix(clip.Type, "image/") {
-			// Create assets directory if it doesn't exist
 			assetsDir := filepath.Join(clipboardDir, "assets")
 			if err := os.MkdirAll(assetsDir, 0755); err != nil {
 				log.Printf("Failed to create assets directory: %v", err)
 				return fmt.Errorf("failed to create assets directory: %w", err)
 			}
 
-			// Generate unique image filename using timestamp
 			imageFilename := fmt.Sprintf("%s-%s%s",
 				clip.CreatedAt.Format("20060102-150405"),
 				clip.ID,
 				s.getImageExtension(clip.Type))
 			imagePath := filepath.Join(assetsDir, imageFilename)
 
-			// Save image file
 			if err := os.WriteFile(imagePath, clip.Content, 0644); err != nil {
 				log.Printf("Failed to write image file: %v", err)
 				return fmt.Errorf("failed to write image file: %w", err)
 			}
 
-			// Use relative path for markdown
 			relImagePath := filepath.Join("assets", imageFilename)
 			entryContent = fmt.Sprintf("![[%s]]", relImagePath)
 		} else {
 			entryContent = content
 		}
 
-		// Generate entry with metadata and content
-		entry := fmt.Sprintf(`
-## %s
----
-source: %s
-tags: [clipboard%s]
-type: %s
----
-
-%s
-
-`,
+		entry := fmt.Sprintf(contentFormat,
 			clip.CreatedAt.Format("15:04:05"),
 			clip.Metadata.SourceApp,
 			s.formatTags(tags),
@@ -241,12 +225,10 @@ type: %s
 
 		var fileContent string
 		if _, err := os.Stat(path); os.IsNotExist(err) {
-			// Create new file with date heading
-			fileContent = fmt.Sprintf("# %s\n%s", 
+			fileContent = fmt.Sprintf("# %s\n%s",
 				clip.CreatedAt.Format("2006-01-02"),
 				entry)
 		} else {
-			// Read existing file
 			existingContent, err := os.ReadFile(path)
 			if err != nil {
 				log.Printf("Failed to read existing file: %v", err)
@@ -255,14 +237,12 @@ type: %s
 			fileContent = string(existingContent) + entry
 		}
 
-		// Write to file with explicit permissions
 		log.Printf("Writing/Updating note: %s", path)
 		if err := os.WriteFile(path, []byte(fileContent), 0644); err != nil {
 			log.Printf("Failed to write file: %v", err)
 			return fmt.Errorf("failed to write file: %w", err)
 		}
 
-		// Verify file was created with correct permissions
 		if info, err := os.Stat(path); err != nil {
 			log.Printf("Failed to verify file: %v", err)
 			return fmt.Errorf("failed to verify file: %w", err)
@@ -272,7 +252,6 @@ type: %s
 
 		log.Printf("Successfully created note: %s", filename)
 
-		// Mark clip as synced
 		if err := s.store.MarkAsSynced(ctx, clip.ID); err != nil {
 			log.Printf("Failed to mark clip as synced: %v", err)
 			return fmt.Errorf("failed to mark clip as synced: %w", err)
@@ -310,7 +289,6 @@ func (s *SyncService) formatTags(tags []string) string {
 
 	var formattedTags []string
 	for _, tag := range tags {
-		// Clean tag: remove spaces and special characters
 		cleanTag := strings.Map(func(r rune) rune {
 			if r == ' ' {
 				return '-'

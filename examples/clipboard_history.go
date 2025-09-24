@@ -5,6 +5,7 @@ import (
 	"clipboard-manager/internal/service"
 	"clipboard-manager/internal/storage"
 	"clipboard-manager/internal/storage/sqlite"
+	"clipboard-manager/pkg/types"
 	"context"
 	"fmt"
 	"log"
@@ -14,12 +15,16 @@ import (
 )
 
 func RunClipboardHistoryTest() {
-	// 1. Set up storage in a temporary directory
 	tempDir, err := os.MkdirTemp("", "clipboard-test-*")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func(path string) {
+		err := os.RemoveAll(path)
+		if err != nil {
+
+		}
+	}(tempDir)
 
 	store, err := sqlite.New(storage.Config{
 		DBPath: filepath.Join(tempDir, "clipboard.db"),
@@ -29,24 +34,28 @@ func RunClipboardHistoryTest() {
 		log.Fatal(err)
 	}
 
-	// 2. Create clipboard service
 	monitor := clipboard.NewMonitor()
 	clipService := service.New(monitor, store)
 
-	// 3. Start monitoring
 	if err := clipService.Start(); err != nil {
 		log.Fatal(err)
 	}
 	defer clipService.Stop()
 
-	// Context for operations
 	ctx := context.Background()
 
 	fmt.Println("Starting clipboard history test...")
-	fmt.Println("1. Copy some text to your clipboard")
-	time.Sleep(3 * time.Second)
+	fmt.Println("1. Adding first test clip")
+	firstClip := types.Clip{
+		Content:   []byte("This is the first test clip"),
+		Type:      "text/plain",
+		CreatedAt: time.Now(),
+	}
+	if err := monitor.SetContent(firstClip); err != nil {
+		log.Printf("Error setting first clip: %v", err)
+	}
+	time.Sleep(2 * time.Second)
 
-	// Debug: List clips after first copy
 	clips, err := store.List(ctx, storage.ListFilter{Limit: 10})
 	if err != nil {
 		log.Printf("Error listing clips: %v", err)
@@ -57,10 +66,17 @@ func RunClipboardHistoryTest() {
 		}
 	}
 
-	fmt.Println("\n2. Copy different text to your clipboard")
-	time.Sleep(3 * time.Second)
+	fmt.Println("\n2. Adding second test clip")
+	secondClip := types.Clip{
+		Content:   []byte("This is the second test clip"),
+		Type:      "text/plain",
+		CreatedAt: time.Now(),
+	}
+	if err := monitor.SetContent(secondClip); err != nil {
+		log.Printf("Error setting second clip: %v", err)
+	}
+	time.Sleep(2 * time.Second)
 
-	// Debug: List clips after second copy
 	clips, err = store.List(ctx, storage.ListFilter{Limit: 10})
 	if err != nil {
 		log.Printf("Error listing clips: %v", err)

@@ -22,7 +22,7 @@ func setupBenchmarkDB(b *testing.B) (*SQLiteStorage, func()) {
 	dbPath := fmt.Sprintf("./testdata/test_%d.db", time.Now().UnixNano())
 	fsPath := fmt.Sprintf("./testdata/fs_%d", time.Now().UnixNano())
 
-	storage, err := New(storage.Config{
+	liteStorage, err := New(storage.Config{
 		DBPath: dbPath,
 		FSPath: fsPath,
 	})
@@ -31,13 +31,16 @@ func setupBenchmarkDB(b *testing.B) (*SQLiteStorage, func()) {
 	}
 
 	cleanup := func() {
-		if err := storage.Close(); err != nil {
+		if err := liteStorage.Close(); err != nil {
 			b.Error(err)
 		}
-		os.RemoveAll("./testdata")
+		err := os.RemoveAll("./testdata")
+		if err != nil {
+			return
+		}
 	}
 
-	return storage, cleanup
+	return liteStorage, cleanup
 }
 
 func generateTestData(size int) []byte {
@@ -49,7 +52,7 @@ func generateTestData(size int) []byte {
 }
 
 func BenchmarkStore(b *testing.B) {
-	storage, cleanup := setupBenchmarkDB(b)
+	benchmarkDB, cleanup := setupBenchmarkDB(b)
 	defer cleanup()
 
 	ctx := context.Background()
@@ -62,7 +65,7 @@ func BenchmarkStore(b *testing.B) {
 			Category:  "test",
 			Tags:      []string{"benchmark", "test"},
 		}
-		_, err := storage.Store(ctx, data, "text/plain", metadata)
+		_, err := benchmarkDB.Store(ctx, data, "text/plain", metadata)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -70,7 +73,7 @@ func BenchmarkStore(b *testing.B) {
 }
 
 func BenchmarkGet(b *testing.B) {
-	storage, cleanup := setupBenchmarkDB(b)
+	benchmarkDB, cleanup := setupBenchmarkDB(b)
 	defer cleanup()
 
 	ctx := context.Background()
@@ -82,14 +85,14 @@ func BenchmarkGet(b *testing.B) {
 	}
 
 	// Store initial data
-	clip, err := storage.Store(ctx, data, "text/plain", metadata)
+	clip, err := benchmarkDB.Store(ctx, data, "text/plain", metadata)
 	if err != nil {
 		b.Fatal(err)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := storage.Get(ctx, fmt.Sprint(clip.ID))
+		_, err := benchmarkDB.Get(ctx, fmt.Sprint(clip.ID))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -97,7 +100,7 @@ func BenchmarkGet(b *testing.B) {
 }
 
 func BenchmarkList(b *testing.B) {
-	storage, cleanup := setupBenchmarkDB(b)
+	benchmarkDB, cleanup := setupBenchmarkDB(b)
 	defer cleanup()
 
 	ctx := context.Background()
@@ -110,7 +113,7 @@ func BenchmarkList(b *testing.B) {
 			Category:  "test",
 			Tags:      []string{"benchmark", "test"},
 		}
-		_, err := storage.Store(ctx, data, "text/plain", metadata)
+		_, err := benchmarkDB.Store(ctx, data, "text/plain", metadata)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -133,7 +136,7 @@ func BenchmarkList(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := storage.List(ctx, listFilter)
+		_, err := benchmarkDB.List(ctx, listFilter)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -141,7 +144,7 @@ func BenchmarkList(b *testing.B) {
 }
 
 func BenchmarkBulkStore(b *testing.B) {
-	storage, cleanup := setupBenchmarkDB(b)
+	benchmarkDB, cleanup := setupBenchmarkDB(b)
 	defer cleanup()
 
 	data := generateTestData(1024)
@@ -149,7 +152,7 @@ func BenchmarkBulkStore(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		err := storage.db.Transaction(func(tx *gorm.DB) error {
+		err := benchmarkDB.db.Transaction(func(tx *gorm.DB) error {
 			for j := 0; j < batchSize; j++ {
 				// Make each record unique by adding a counter to the data
 				uniqueData := []byte(fmt.Sprintf("%d-%d-%x", time.Now().UnixNano(), j, data[:32]))
@@ -158,7 +161,7 @@ func BenchmarkBulkStore(b *testing.B) {
 					Category:  "test",
 					Tags:      []string{"benchmark", "test"},
 				}
-				// Convert tags to JSON string for storage
+				// Convert tags to JSON string for benchmarkDB
 				tagsJSON, err := json.Marshal(metadata.Tags)
 				if err != nil {
 					return fmt.Errorf("failed to marshal tags: %w", err)

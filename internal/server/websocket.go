@@ -81,7 +81,7 @@ func (h *Hub) run() {
 func (h *Hub) HandleClipboardChange(clip types.Clip) {
 	// Create a notification message
 	notification := struct {
-		Type    string      `json:"type"`
+		Type    string     `json:"type"`
 		Payload types.Clip `json:"payload"`
 	}{
 		Type:    "clipboard_change",
@@ -108,8 +108,10 @@ func (c *Client) writePump() {
 		select {
 		case message, ok := <-c.send:
 			if !ok {
-				// The hub closed the channel
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				err := c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				if err != nil {
+					return
+				}
 				return
 			}
 
@@ -117,7 +119,10 @@ func (c *Client) writePump() {
 			if err != nil {
 				return
 			}
-			w.Write(message)
+			_, err = w.Write(message)
+			if err != nil {
+				return
+			}
 
 			if err := w.Close(); err != nil {
 				return
@@ -131,7 +136,6 @@ func (s *Server) serveWs(w http.ResponseWriter, r *http.Request) {
 	log.Printf("WebSocket connection attempt from %s", r.RemoteAddr)
 	log.Printf("Request headers: %+v", r.Header)
 
-	// Check if it's a websocket upgrade request
 	if !websocket.IsWebSocketUpgrade(r) {
 		log.Printf("Not a WebSocket upgrade request from %s", r.RemoteAddr)
 		http.Error(w, "Expected WebSocket Upgrade", http.StatusBadRequest)
@@ -141,7 +145,6 @@ func (s *Server) serveWs(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("Error upgrading connection from %s: %v", r.RemoteAddr, err)
-		// Check for specific upgrade errors
 		if strings.Contains(err.Error(), "websocket: missing client key") {
 			log.Printf("Client did not provide Sec-WebSocket-Key header")
 		}
@@ -160,6 +163,5 @@ func (s *Server) serveWs(w http.ResponseWriter, r *http.Request) {
 	}
 	client.hub.register <- client
 
-	// Start the write pump in a new goroutine
 	go client.writePump()
 }
