@@ -20,7 +20,6 @@ func newPIDFile() (*pidFile, error) {
 		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	// Use same directory as other app files
 	pidDir := filepath.Join(homeDir, ".clipboard-manager")
 	if err := os.MkdirAll(pidDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create PID directory: %w", err)

@@ -2,17 +2,18 @@ package storage
 
 import (
 	"clipboard-manager/pkg/types"
-	"database/sql/driver"  // Provides interfaces for database interaction
-	"encoding/json"        // For JSON encoding/decoding
-	"gorm.io/gorm"
+	"database/sql/driver" // Provides interfaces for database interaction
+	"encoding/json"       // For JSON encoding/decoding
 	"strconv"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type JSON json.RawMessage
 
 // StringArray represents a string array that can be stored in SQLite
-// We implement sql.Scanner and driver.Valuer interfaces to handle 
+// We implement sql.Scanner and driver.Valuer interfaces to handle
 // conversion between Go slice and SQLite JSON storage
 type StringArray []string
 
@@ -56,18 +57,18 @@ func (sa StringArray) Value() (driver.Value, error) {
 // ClipModel represents a clipboard entry in storage
 type ClipModel struct {
 	gorm.Model
-	ContentHash string      `gorm:"type:string;uniqueIndex"` // SHA-256 hash for deduplication
-	Content     []byte      `gorm:"type:blob"`              // For inline storage
-	StoragePath string      `gorm:"type:string"`            // For filesystem storage
-	IsExternal  bool        `gorm:"type:boolean"`           // Whether stored in filesystem
-	Size        int64       `gorm:"type:bigint"`            // Content size in bytes
-	Type        string      `gorm:"type:string;not null"`
-	Metadata    JSON        `gorm:"type:json"`
-	SourceApp   string
-	Category    string      `gorm:"index"`
-	Tags        StringArray `gorm:"type:json"`              // Store as JSON in SQLite
-	LastUsed    time.Time   `gorm:"index"`                  // Track when content was last accessed
-	SyncedToObsidian bool   `gorm:"type:boolean;default:false"` // Track if synced to Obsidian
+	ContentHash      string `gorm:"type:string;uniqueIndex"` // SHA-256 hash for deduplication
+	Content          []byte `gorm:"type:blob"`               // For inline storage
+	StoragePath      string `gorm:"type:string"`             // For filesystem storage
+	IsExternal       bool   `gorm:"type:boolean"`            // Whether stored in filesystem
+	Size             int64  `gorm:"type:bigint"`             // Content size in bytes
+	Type             string `gorm:"type:string;not null"`
+	Metadata         JSON   `gorm:"type:json"`
+	SourceApp        string
+	Category         string      `gorm:"index"`
+	Tags             StringArray `gorm:"type:json"`                  // Store as JSON in SQLite
+	LastUsed         time.Time   `gorm:"index"`                      // Track when content was last accessed
+	SyncedToObsidian bool        `gorm:"type:boolean;default:false"` // Track if synced to Obsidian
 }
 
 // ToClip converts ClipModel to public Clip type

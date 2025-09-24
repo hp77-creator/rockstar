@@ -36,7 +36,6 @@ func New(clipService *service.ClipboardService, config Config) (*Server, error) 
 	hub := newHub()
 	go hub.run()
 
-	// Create server instance
 	server := &Server{
 		clipService: clipService,
 		config:      config,
@@ -107,10 +106,10 @@ func (s *Server) Start() error {
 		}
 
 		log.Printf("Attempting to start HTTP server on %s", addr)
-		
+
 		// Create a channel to signal server start
 		serverErr := make(chan error, 1)
-		
+
 		go func() {
 			if err := s.srv.ListenAndServe(); err != http.ErrServerClosed {
 				serverErr <- fmt.Errorf("http server error on %s: %w", addr, err)
@@ -133,7 +132,7 @@ func (s *Server) Start() error {
 				continue
 			}
 			resp.Body.Close()
-			
+
 			log.Printf("Server started and verified successfully on %s", addr)
 			return nil
 		}
@@ -262,16 +261,16 @@ func (s *Server) handlePasteClip(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Handling paste request for index: %d", index)
-	
+
 	if err := s.clipService.PasteByIndex(r.Context(), index); err != nil {
 		log.Printf("Error pasting clip at index %d: %v", index, err)
-		
+
 		// Create a detailed error response
 		errorResponse := map[string]string{
-			"error": err.Error(),
+			"error":  err.Error(),
 			"detail": fmt.Sprintf("Failed to paste clip at index %d", index),
 		}
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(errorResponse)

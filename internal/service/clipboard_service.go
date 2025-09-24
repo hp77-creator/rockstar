@@ -43,14 +43,14 @@ func (e *ClipboardError) Unwrap() error {
 
 // ClipboardService manages clipboard monitoring and storage
 type ClipboardService struct {
-	monitor        clipboard.Monitor
-	store          storage.Storage
-	obsidianSync   *obsidian.SyncService
-	ctx            context.Context
-	cancel         context.CancelFunc
-	wg             sync.WaitGroup
-	handlers       []ClipboardChangeHandler
-	mu             sync.RWMutex
+	monitor      clipboard.Monitor
+	store        storage.Storage
+	obsidianSync *obsidian.SyncService
+	ctx          context.Context
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
+	handlers     []ClipboardChangeHandler
+	mu           sync.RWMutex
 }
 
 // New creates a new ClipboardService
@@ -63,16 +63,12 @@ func New(monitor clipboard.Monitor, store storage.Storage) *ClipboardService {
 		cancel:  cancel,
 	}
 
-	// Log environment variables in debug mode
-	if debugMode {
-		debugLog("Environment variables:")
-		for _, env := range []string{"OBSIDIAN_ENABLED", "OBSIDIAN_VAULT_PATH", "OBSIDIAN_SYNC_INTERVAL", 
-			"HOME", "TMPDIR", "USER", "CLIPBOARD_DB_PATH", "CLIPBOARD_FS_PATH", "CLIPBOARD_API_PORT"} {
-			debugLog("- %s: %s", env, os.Getenv(env))
-		}
+	debugLog("Environment variables:")
+	for _, env := range []string{"OBSIDIAN_ENABLED", "OBSIDIAN_VAULT_PATH", "OBSIDIAN_SYNC_INTERVAL",
+		"HOME", "TMPDIR", "USER", "CLIPBOARD_DB_PATH", "CLIPBOARD_FS_PATH", "CLIPBOARD_API_PORT"} {
+		debugLog("- %s: %s", env, os.Getenv(env))
 	}
 
-	// Initialize Obsidian sync if enabled
 	if os.Getenv("OBSIDIAN_ENABLED") == "true" {
 		debugLog("Obsidian sync is enabled")
 		vaultPath := os.Getenv("OBSIDIAN_VAULT_PATH")
@@ -81,7 +77,6 @@ func New(monitor clipboard.Monitor, store storage.Storage) *ClipboardService {
 			return service
 		}
 
-		// Verify vault path exists and is accessible
 		if info, err := os.Stat(vaultPath); os.IsNotExist(err) {
 			log.Printf("[WARN] Obsidian vault path does not exist: %s", vaultPath)
 			return service
@@ -97,7 +92,6 @@ func New(monitor clipboard.Monitor, store storage.Storage) *ClipboardService {
 			}
 		}
 
-		// List vault directory contents
 		if files, err := os.ReadDir(vaultPath); err == nil {
 			debugLog("Vault directory contents:")
 			for _, file := range files {
@@ -107,12 +101,10 @@ func New(monitor clipboard.Monitor, store storage.Storage) *ClipboardService {
 			log.Printf("[WARN] Failed to list vault directory: %v", err)
 		}
 
-		// Get sync interval
 		interval := 5 * time.Minute // default 5 minutes
-		
+
 		if syncInterval := os.Getenv("OBSIDIAN_SYNC_INTERVAL"); syncInterval != "" {
 			if minutes, err := strconv.Atoi(syncInterval); err == nil {
-				// Ensure minimum 1 minute interval
 				if minutes < 1 {
 					log.Printf("[WARN] Sync interval must be at least 1 minute, using default")
 				} else {
@@ -194,12 +186,12 @@ func (s *ClipboardService) Start() error {
 				log.Printf("[ERROR] Error handling clipboard change: %v", err)
 				return
 			}
-			
+
 			// Notify all registered handlers
 			s.mu.RLock()
 			handlers := s.handlers // Copy to avoid holding lock during callbacks
 			s.mu.RUnlock()
-			
+
 			for _, handler := range handlers {
 				handler.HandleClipboardChange(clip)
 			}
@@ -221,10 +213,8 @@ func (s *ClipboardService) Start() error {
 
 // Stop gracefully shuts down the service
 func (s *ClipboardService) Stop() error {
-	// Signal shutdown
 	s.cancel()
 
-	// Stop the monitor
 	if err := s.monitor.Stop(); err != nil {
 		return &ClipboardError{
 			Op:      "Stop",
@@ -234,12 +224,10 @@ func (s *ClipboardService) Stop() error {
 		}
 	}
 
-	// Stop Obsidian sync if running
 	if s.obsidianSync != nil {
 		s.obsidianSync.Stop()
 	}
 
-	// Wait for ongoing operations to complete
 	s.wg.Wait()
 
 	return nil
@@ -371,7 +359,7 @@ func (s *ClipboardService) ClearClips(ctx context.Context) error {
 			Err:     err,
 		}
 	}
-	
+
 	for _, clip := range clips {
 		if err := s.store.Delete(ctx, clip.ID); err != nil {
 			return &ClipboardError{
@@ -416,7 +404,7 @@ func (s *ClipboardService) handleClipboardChange(clip types.Clip) error {
 		}
 	}
 
-	debugLog("Stored new clipboard content (type: %s, source: %s)", 
+	debugLog("Stored new clipboard content (type: %s, source: %s)",
 		clip.Type, clip.Metadata.SourceApp)
 
 	return nil

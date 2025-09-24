@@ -15,7 +15,6 @@ import (
 
 // Example shows how to use the clipboard manager core functionality
 func Example() {
-	// 1. Set up storage
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatal(err)
@@ -30,53 +29,45 @@ func Example() {
 		log.Fatal(err)
 	}
 
-	// 2. Create clipboard monitor
 	monitor := clipboard.NewMonitor()
 
-	// 3. Create clipboard service
 	clipService := service.New(monitor, store)
 
-	// 4. Start monitoring clipboard
 	if err := clipService.Start(); err != nil {
 		log.Fatal(err)
 	}
 	defer clipService.Stop()
 
-	// 5. Search functionality example
 	results, err := store.Search(storage.SearchOptions{
-		Query:     "example",           // Search for specific content
-		Type:      storage.TypeText,    // Filter by type
-		SortBy:    "last_used",        // Sort by timestamp
-		SortOrder: "desc",             // Most recent first
-		Limit:     10,                 // Limit results
+		Query:     "example",        // Search for specific content
+		Type:      storage.TypeText, // Filter by type
+		SortBy:    "last_used",      // Sort by timestamp
+		SortOrder: "desc",           // Most recent first
+		Limit:     10,               // Limit results
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// 6. Process search results
 	for _, result := range results {
-		fmt.Printf("Found clip: %s (type: %s)\n", 
+		fmt.Printf("Found clip: %s (type: %s)\n",
 			string(result.Clip.Content),
 			result.Clip.Type,
 		)
 	}
 
-	// 7. Get recent clips
 	recent, err := store.GetRecent(5)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("Recent clips: %d\n", len(recent))
 
-	// 8. Get clips by type
 	images, err := store.GetByType(storage.TypeImage, 5)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("Recent images: %d\n", len(images))
 
-	// 9. Manual clipboard operations
 	ctx := context.Background()
 	content := []byte("Example content")
 	metadata := types.Metadata{
@@ -85,33 +76,27 @@ func Example() {
 		Tags:      []string{"example", "test"},
 	}
 
-	// Store new content
 	clip, err := store.Store(ctx, content, storage.TypeText, metadata)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("Stored clip with ID: %s\n", clip.ID)
 
-	// Retrieve content
 	retrieved, err := store.Get(ctx, clip.ID)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("Retrieved clip: %s\n", string(retrieved.Content))
 
-	// Delete content
 	if err := store.Delete(ctx, clip.ID); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("Deleted clip")
 
-	// 10. Clipboard history operations
-	// Get the second most recent clip (index 1)
 	if err := clipService.PasteByIndex(ctx, 1); err != nil {
 		log.Printf("Failed to paste clip: %v", err)
 	}
 
-	// Get a specific clip and set it as current clipboard content
 	if clip, err := clipService.GetClipByIndex(ctx, 0); err == nil {
 		if err := clipService.SetClipboard(ctx, clip); err != nil {
 			log.Printf("Failed to set clipboard: %v", err)
@@ -122,6 +107,16 @@ func Example() {
 // CustomStorage shows how to implement a custom storage backend
 type CustomStorage struct {
 	// Your storage fields
+}
+
+func (s *CustomStorage) MarkAsSynced(ctx context.Context, id string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s *CustomStorage) ListUnsynced(ctx context.Context, limit int) ([]*types.Clip, error) {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (s *CustomStorage) Store(ctx context.Context, content []byte, clipType string, metadata types.Metadata) (*types.Clip, error) {
