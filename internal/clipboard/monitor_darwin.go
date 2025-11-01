@@ -61,28 +61,24 @@ func NewMonitor() Monitor {
 	return m
 }
 
-func (m *DarwinMonitor) Start() error {
-	m.mutex.Lock()
-	initialCount := m.pasteboard.ChangeCount()
-	m.changeCount = initialCount
-	m.mutex.Unlock()
-
-	go func() {
-		ticker := time.NewTicker(1 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				m.checkForChanges()
-			case <-m.stopChan:
-				return
-			}
-		}
-	}()
-
-	return nil
+func (m *monitor) Start() error {
+    go func() {
+        for {
+            clip, err := readClipboard()
+            if err == nil {
+                if m.lastContent != string(clip.Content) {
+                    m.lastContent = string(clip.Content)
+                    if m.changeHandler != nil {
+                        m.changeHandler(clip)   // Sends text/image to service layer
+                    }
+                }
+            }
+            time.Sleep(300 * time.Millisecond)
+        }
+    }()
+    return nil
 }
+
 
 func (m *DarwinMonitor) Stop() error {
 	close(m.stopChan)

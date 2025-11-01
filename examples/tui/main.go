@@ -1,11 +1,15 @@
 package cmd
 
 import (
-	"clipboard-manager/internal/storage"
-	"fmt"
-	"github.com/gdamore/tcell/v2"
-	"strings"
+    "clipboard-manager/pkg/types"
+    "fmt"
+    "os"
+    "os/exec"
+    "runtime"
+    "time"
+    "strings"
 )
+
 
 type InteractiveMode struct {
 	store      storage.SearchService
@@ -133,10 +137,25 @@ func (im *InteractiveMode) loadResults(query string) error {
 }
 
 func (im *InteractiveMode) pasteSelected() error {
-	selected := im.results[im.selected]
-	searchCmd := NewSearchCommand(im.store)
-	im.screen.Fini()
-	return searchCmd.Paste(selected.Clip.ID)
+    selected := im.results[im.selected]
+    clip := selected.Clip
+
+    // Close TUI before taking action
+    im.screen.Fini()
+
+    // If image open in viewer instead of pasting raw
+    if clip.Type == "image/png" || clip.Type == "image/tiff" {
+        fmt.Println(" Opening image preview...")
+
+        if err := openImageTemp(clip.Content); err != nil {
+            return fmt.Errorf("failed to preview image: %w", err)
+        }
+        return nil
+    }
+
+    // Else, default paste using CLI logic
+    searchCmd := NewSearchCommand(im.store)
+    return searchCmd.Paste(clip.ID)
 }
 
 func (im *InteractiveMode) moveSelection(delta int) {
@@ -241,3 +260,35 @@ func truncate(s string, maxLen int) string {
 	}
 	return s[:maxLen-3] + "..."
 }
+
+func openImageTemp(data []byte) error {
+    file := fmt.Sprintf("clip_%d.png", time.Now().Unix())
+    if err := os.WriteFile(file, data, 0644); err != nil {
+        return err
+    }
+    switch runtime.GOOS {
+    case "darwin":
+        return exec.Command("open", file).Start()
+    case "windows":
+        return exec.Command("rundll32", "url.dll,FileProtocolHandler", file).Start()
+    default:
+        return exec.Command("xdg-open", file).Start()
+    }
+}
+
+func getPreview(clip *types.Clip) string {
+    if strings.HasPrefix(clip.Type, "image/") {
+        return fmt.Sprintf("[Image %d KB]", len(clip.Content)/1024)
+    }
+
+    if clip.Type == "text" {
+        text := strings.ReplaceAll(string(clip.Content), "\n", " ")
+        if len(text) > 50 {
+            return text[:50] + "..."
+        }
+        return text
+    }
+
+    return fmt.Sprintf("[%s %d bytes]", clip.Type, len(clip.Content))
+}
+

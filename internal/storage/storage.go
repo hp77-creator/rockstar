@@ -41,3 +41,13 @@ type Config struct {
 	DBPath  string // Path to SQLite database
 	FSPath  string // Path to filesystem storage for large files
 }
+
+func (s *Storage) SaveImage(data []byte) error {
+    item := models.ClipboardItem{
+        Type: "image",
+        Content: data,
+        CreatedAt: time.Now(),
+    }
+    return s.db.Create(&item).Error
+}
+

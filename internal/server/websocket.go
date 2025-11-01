@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"encoding/base64"
 
 	"github.com/gorilla/websocket"
 )
@@ -79,7 +80,11 @@ func (h *Hub) run() {
 
 // HandleClipboardChange implements service.ClipboardChangeHandler
 func (h *Hub) HandleClipboardChange(clip types.Clip) {
-	// Create a notification message
+	// If clipboard contains an image, convert to base64 string
+	if clip.Type == "image" {
+		clip.Content = []byte("data:image/png;base64," + base64.StdEncoding.EncodeToString(clip.Content))
+	}
+
 	notification := struct {
 		Type    string      `json:"type"`
 		Payload types.Clip `json:"payload"`
@@ -97,6 +102,8 @@ func (h *Hub) HandleClipboardChange(clip types.Clip) {
 
 	h.broadcast <- message
 }
+
+
 
 // writePump pumps messages from the hub to the websocket connection
 func (c *Client) writePump() {

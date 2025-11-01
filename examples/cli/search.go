@@ -66,52 +66,47 @@ func (c *SearchCommand) Search(query string, limit int) error {
 
 // Paste copies the content with given ID to clipboard and simulates Command+V
 func (c *SearchCommand) Paste(id string) error {
-	// Get the clip
-	results, err := c.store.Search(storage.SearchOptions{
-		Query: id,
-		Limit: 1,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to get clip: %w", err)
-	}
+    // Get the clip by ID
+    results, err := c.store.Search(storage.SearchOptions{
+        Query: id,
+        Limit: 1,
+    })
+    if err != nil {
+        return fmt.Errorf("failed to get clip: %w", err)
+    }
 
-	if len(results) == 0 {
-		return fmt.Errorf("no clip found with ID: %s", id)
-	}
+    if len(results) == 0 {
+        return fmt.Errorf("no clip found with ID: %s", id)
+    }
 
-	clip := results[0].Clip
+    clip := results[0].Clip
 
-	// Get pasteboard
-	pb := appkit.Pasteboard_GeneralPasteboard()
+    pb := appkit.Pasteboard_GeneralPasteboard()
 
-	// Set content based on type
-	switch clip.Type {
-	case "text":
-		pb.SetStringForType(string(clip.Content), appkit.PasteboardType("public.utf8-plain-text"))
-	case "image/png":
-		pb.SetDataForType(clip.Content, appkit.PasteboardType("public.png"))
-	case "image/tiff":
-		pb.SetDataForType(clip.Content, appkit.PasteboardType("public.tiff"))
-	case "file":
-		pb.SetStringForType(string(clip.Content), appkit.PasteboardType("public.file-url"))
-	default:
-		return fmt.Errorf("unsupported content type: %s", clip.Type)
-	}
+    switch clip.Type {
+    case "text":
+        pb.SetStringForType(string(clip.Content), appkit.PasteboardType("public.utf8-plain-text"))
+        fmt.Println(" Text copied to clipboard.")
+    case "image/png", "image/tiff":
+        pb.SetDataForType(clip.Content, appkit.PasteboardType("public.png"))
+        fmt.Println(" Image copied to clipboard.")
 
-	// Simulate Command+V using osascript
-	if runtime.GOOS == "darwin" {
-		cmd := exec.Command("osascript", "-e", `
-			tell application "System Events"
-				keystroke "v" using command down
-			end tell
-		`)
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to simulate paste: %w", err)
-		}
-	}
+        //  Optional: auto-open preview image
+        if err := openImageTemp(clip.Content); err != nil {
+            fmt.Println(" Could not preview image:", err)
+        }
+    default:
+        return fmt.Errorf("unsupported content type: %s", clip.Type)
+    }
 
-	return nil
+    // Auto paste (Cmd+V)
+    if runtime.GOOS == "darwin" {
+        exec.Command("osascript", "-e",
+        `tell application "System Events" to keystroke "v" using command down`).Run()
+    }
+    return nil
 }
+
 
 // getPreview returns a preview string for a clip
 func getPreview(clip *types.Clip) string {
@@ -133,3 +128,21 @@ func getPreview(clip *types.Clip) string {
 		return fmt.Sprintf("[%s %d bytes]", clip.Type, len(clip.Content))
 	}
 }
+
+// openImageTemp saves image to a temporary file and opens it using default viewer
+func openImageTemp(data []byte) error {
+    tmpFile := fmt.Sprintf("clip_%d.png", time.Now().Unix())
+    if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+        return err
+    }
+
+    switch runtime.GOOS {
+    case "darwin":
+        return exec.Command("open", tmpFile).Start()
+    case "windows":
+        return exec.Command("rundll32", "url.dll,FileProtocolHandler", tmpFile).Start()
+    default: // Linux
+        return exec.Command("xdg-open", tmpFile).Start()
+    }
+}
+
